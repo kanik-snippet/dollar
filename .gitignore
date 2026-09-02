@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+.env
+.venv/
+staticfiles/
+media/
+private-desktop-releases/
+.pytest_cache/
+catalog_seed/*/*.txt

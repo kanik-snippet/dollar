@@ -1,0 +1,97 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Office IP whitelist</title>
+  <link rel="stylesheet" href="{% static 'control/panel.css' %}">
+  <style>
+    .whitelist-shell { max-width: 720px; margin: 0 auto; padding: 52px 24px; }
+    .whitelist-card { padding: 32px; }
+    .whitelist-form { display: grid; gap: 20px; margin-top: 28px; }
+    .whitelist-form label { display: grid; gap: 8px; color: var(--ink, #17241d); font-weight: 700; }
+    .whitelist-form select, .whitelist-form input { min-height: 44px; width: 100%; border: 1px solid #cbd6cf; border-radius: 9px; padding: 10px 12px; background: #fff; color: #17241d; font: inherit; box-sizing: border-box; }
+    .whitelist-help { color: #64736a; line-height: 1.55; margin: 10px 0 0; }
+    .whitelist-result { display: none; margin-top: 22px; border-radius: 9px; padding: 14px 16px; line-height: 1.55; }
+    .whitelist-result.is-success { display: block; background: #e9f8ee; color: #145b2c; border: 1px solid #b8e2c3; }
+    .whitelist-result.is-error { display: block; background: #fff0ef; color: #9a281f; border: 1px solid #f0c3bf; }
+    .whitelist-actions { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <main class="whitelist-shell">
+    <div class="page-intro">
+      <div>
+        <span class="eyebrow">Access management</span>
+        <h1>Office IP whitelist</h1>
+        <p>Add one public IPv4 as an additional allowed address for every active device in an office.</p>
+      </div>
+      <a class="button button-secondary" href="{{ panel_url }}">Back to panel</a>
+    </div>
+
+    <article class="panel-card whitelist-card">
+      <h2>Add an office-wide IP</h2>
+      <p class="whitelist-help">Existing primary IPs are never changed. If the address is already present, it is skipped; an inactive additional address is reactivated.</p>
+      <form class="whitelist-form" id="office-whitelist-form">
+        <label>
+          Office
+          <select id="office" required>
+            <option value="">Choose office</option>
+            {% for office in offices %}<option value="{{ office }}">{{ office }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>
+          Public IPv4 address
+          <input id="ipv4" required inputmode="numeric" autocomplete="off" placeholder="180.151.24.197">
+        </label>
+        <div class="whitelist-actions">
+          <span class="whitelist-help">Only active devices of the selected office are updated.</span>
+          <button class="button button-primary" id="submit" type="submit">Add IP</button>
+        </div>
+      </form>
+      <div id="result" class="whitelist-result" role="status"></div>
+    </article>
+  </main>
+  <span id="csrf-token" hidden>{% csrf_token %}</span>
+  <script>
+    (() => {
+      const form = document.getElementById("office-whitelist-form");
+      const office = document.getElementById("office");
+      const ipv4 = document.getElementById("ipv4");
+      const submit = document.getElementById("submit");
+      const result = document.getElementById("result");
+      const csrf = document.querySelector("#csrf-token input")?.value || "";
+      const apiUrl = "{{ api_url }}";
+
+      function show(message, kind) {
+        result.className = `whitelist-result is-${kind}`;
+        result.textContent = message;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        submit.disabled = true;
+        result.className = "whitelist-result";
+        try {
+          const response = await fetch(apiUrl, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+            body: JSON.stringify({ office: office.value, ipv4: ipv4.value.trim() }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload.ok) throw new Error(payload.message || "Could not update IP access.");
+          const stats = payload.result;
+          show(`${payload.message} Devices: ${stats.devices}; added: ${stats.created}; reactivated: ${stats.reactivated}; already primary: ${stats.primary_ip_skipped}; already additional: ${stats.existing_additional_skipped}.`, "success");
+        } catch (error) {
+          show(error.message || "Could not update IP access.", "error");
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

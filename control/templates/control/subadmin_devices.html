@@ -1,0 +1,87 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Devices · Sub-admin</title>
+  <link rel="stylesheet" href="{% static 'control/subadmin.css' %}">
+</head>
+<body class="subadmin-app">
+  <aside class="subadmin-sidebar">
+    <div class="subadmin-brand"><span class="brand-mark">AC</span><div><strong>Automation</strong><small>Sub-admin workspace</small></div></div>
+    <div class="workspace-state"><span class="pulse-dot"></span> Live workspace</div>
+    <nav class="subadmin-nav" aria-label="Sub-admin navigation">
+      <a href="{% url 'control:subadmin-dashboard' %}"><span>OV</span>Overview</a>
+      <a href="{% url 'control:subadmin-domains' %}"><span>DA</span>Domain activity</a>
+      <a href="{% url 'control:subadmin-suspicious' %}"><span>SA</span>Suspicious activity</a>
+      <a class="active" href="{% url 'control:subadmin-devices' %}"><span>DV</span>Devices</a>
+    </nav>
+    <div class="subadmin-user">
+      <div class="avatar">{{ account.user.username|slice:':1'|upper }}</div>
+      <div><strong>{{ account.display_name|default:account.user.username }}</strong><small>{{ account.user.username }}</small></div>
+      <form method="post" action="{% url 'control:subadmin-logout' %}">{% csrf_token %}<button type="submit">Sign out</button></form>
+    </div>
+  </aside>
+  <main class="subadmin-main">
+    <header class="subadmin-topbar">
+      <div><span class="auth-eyebrow">Sub-admin workspace</span><h1>Devices</h1><p>Manage visible devices, access state and public IPs.</p></div>
+      <span class="updated">{{ clients|length }} matching records</span>
+    </header>
+    <section class="subadmin-content">
+      {% if messages %}<div class="ip-messages">{% for message in messages %}<div class="ip-message {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+      <form class="activity-filters device-filters" method="get">
+        <label>Office<select name="office"><option value="">All visible offices</option>{% for item in offices %}<option value="{{ item }}" {% if selected_office == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
+        <label class="filter-wide">Search device<input name="q" value="{{ query }}" placeholder="Name, system, device ID or IP"></label>
+        <label>Access<select name="active"><option value="">All</option><option value="1" {% if active_filter == '1' %}selected{% endif %}>Enabled</option><option value="0" {% if active_filter == '0' %}selected{% endif %}>Disabled</option></select></label>
+        <label>Last seen from<input type="datetime-local" name="from" value="{{ from_value }}"></label>
+        <label>Last seen to<input type="datetime-local" name="to" value="{{ to_value }}"></label>
+        <button class="primary-button filter-button" type="submit">Apply</button>
+        <a class="secondary-button filter-link" href="{% url 'control:subadmin-devices' %}">Clear</a>
+      </form>
+
+      <article class="bulk-ip-card">
+        <div><span class="auth-eyebrow">Office-wide update</span><h2>Change IP access for a full office</h2><p>This replaces the primary IP and optional additional IPs for every visible device in the selected office.</p></div>
+        <form class="bulk-ip-form" method="post">
+          {% csrf_token %}<input type="hidden" name="action" value="bulk_ips">
+          <label>Office<select name="office" required><option value="">Choose office</option>{% for item in offices %}<option value="{{ item }}">{{ item }}</option>{% endfor %}</select></label>
+          <label>Primary IPv4<input name="ipv4" inputmode="numeric" placeholder="203.0.113.10" required></label>
+          <label>Additional IPv4 <span>(optional)</span><input name="ipv4" inputmode="numeric" placeholder="203.0.113.11"></label>
+          <button class="primary-button" type="submit">Save office IPs</button>
+        </form>
+      </article>
+
+      <article class="activity-card device-card">
+        <div class="activity-card-head"><div><h2>Visible devices</h2><p>Only devices from your assigned offices/groups are shown.</p></div><span>{{ clients|length }} records</span></div>
+        <div class="device-table-wrap"><table class="activity-table device-table"><thead><tr><th>Office / system</th><th>Device identity</th><th>Group / config</th><th>Allowed IPs</th><th>Access</th><th>Last seen</th></tr></thead><tbody>
+          {% for client in clients %}
+          <tr>
+            <td><strong>{{ client.office_name }}</strong><small>sys_{{ client.system_number }}</small></td>
+            <td><strong>{{ client.name }}</strong><small>{{ client.device_id|default:'No device ID' }}</small></td>
+            <td><strong>{{ client.config_bundle.browser_group_name }}</strong><small>{{ client.config_bundle.name }} · {{ client.config_bundle.browser_group_id|default:'No group ID' }}</small></td>
+            <td>
+              <form class="device-ip-form" method="post">
+                {% csrf_token %}<input type="hidden" name="action" value="save_ips"><input type="hidden" name="client_id" value="{{ client.pk }}">
+                <div class="device-ip-fields"><div class="device-ip-row"><input name="ipv4" value="{{ client.ipv4 }}" inputmode="numeric" required><span class="ip-label">Primary</span></div>{% for item in client.visible_allowed_ips %}{% if item.active %}<div class="device-ip-row"><input name="ipv4" value="{{ item.ipv4 }}" inputmode="numeric"><span class="ip-label">Additional</span></div>{% endif %}{% endfor %}</div>
+                <div class="device-ip-actions"><button class="tiny-button" type="button" data-add-device-ip>+ IP</button><button class="tiny-button save" type="submit">Save</button></div>
+              </form>
+            </td>
+            <td><form method="post" class="access-toggle-form">{% csrf_token %}<input type="hidden" name="action" value="toggle"><input type="hidden" name="client_id" value="{{ client.pk }}"><input type="hidden" name="active" value="{% if client.active %}0{% else %}1{% endif %}"><button class="access-toggle {% if client.active %}on{% else %}off{% endif %}" type="submit"><span></span>{% if client.active %}Enabled{% else %}Disabled{% endif %}</button></form></td>
+            <td>{% if client.last_seen_at %}{{ client.last_seen_at|date:'d M Y, H:i:s' }}{% else %}<span class="cell-muted">Never</span>{% endif %}</td>
+          </tr>
+          {% empty %}<tr><td colspan="6" class="empty-row">No visible devices match these filters.</td></tr>{% endfor %}
+        </tbody></table></div>
+      </article>
+    </section>
+  </main>
+  <script>
+  document.querySelectorAll('[data-add-device-ip]').forEach(button => button.addEventListener('click', () => {
+    const fields = button.closest('form').querySelector('.device-ip-fields');
+    const row = document.createElement('div'); row.className = 'device-ip-row';
+    row.innerHTML = '<input name="ipv4" inputmode="numeric" placeholder="203.0.113.11"><span class="ip-label">Additional</span><button type="button" class="remove-device-ip">Remove</button>';
+    row.querySelector('.remove-device-ip').addEventListener('click', () => row.remove()); fields.appendChild(row);
+  }));
+  </script>
+</body>
+</html>

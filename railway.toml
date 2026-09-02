@@ -1,0 +1,11 @@
+[build]
+builder = "RAILPACK"
+buildCommand = "python manage.py collectstatic --noinput"
+
+[deploy]
+preDeployCommand = ["python manage.py migrate --noinput && python manage.py ensure_admin"]
+startCommand = "python -m gunicorn controlserver.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 2 --timeout 120 --access-logfile - --error-logfile -"
+healthcheckPath = "/healthz/"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

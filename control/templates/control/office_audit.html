@@ -1,0 +1,63 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Office profile audit</title>
+  <link rel="stylesheet" href="{% static 'control/panel.css' %}">
+  <link rel="stylesheet" href="{% static 'control/office_audit.css' %}">
+</head>
+<body class="office-audit-page">
+  <div class="audit-shell">
+    <aside class="audit-sidebar">
+      <a class="audit-brand" href="{% url 'control:panel' %}"><span class="brand-mark">AC</span><span><strong>Automation</strong><small>Control Center</small></span></a>
+      <nav class="audit-nav">
+        <a href="{% url 'control:panel' %}">Overview</a>
+        <a class="active" href="{% url 'control:panel-office-audit' %}">Office profile audit</a>
+        <a href="{% url 'control:panel' %}#domains">Domain activity</a>
+        <a href="{{ admin_url }}">Django admin</a>
+      </nav>
+      <div class="audit-sidebar-foot"><span>Source of truth</span><small>Profile lifecycle and domain events stored by Django.</small></div>
+    </aside>
+    <main class="audit-main">
+      <header class="audit-header">
+        <div><span class="eyebrow">Controlled logs</span><h1>Office profile audit</h1><p>Requests, opens, deletion state and profile activity for one office at a time.</p></div>
+        <a class="button button-secondary" href="{% url 'control:panel-office-audit' %}">Reset</a>
+      </header>
+      <section class="audit-toolbar panel-card">
+        <div class="office-tabs" role="tablist" aria-label="Office tabs">
+          {% for item in office_options %}
+            <a class="office-tab {% if selected_office == item %}active{% endif %}" href="?office={{ item|urlencode }}&from={{ from_value|urlencode }}&to={{ to_value|urlencode }}">{{ item }}</a>
+          {% empty %}<span class="cell-muted">No offices configured.</span>{% endfor %}
+        </div>
+        <form class="audit-filters" method="get">
+          <input type="hidden" name="office" value="{{ selected_office }}">
+          <label>From date & time<input type="datetime-local" name="from" value="{{ from_value }}"></label>
+          <label>To date & time<input type="datetime-local" name="to" value="{{ to_value }}"></label>
+          <button class="button button-primary" type="submit">Apply filter</button>
+        </form>
+        <div class="audit-range">Showing {{ range_from|date:'d M Y, H:i:s' }} to {{ range_to|date:'d M Y, H:i:s' }} · Office: <strong>{{ selected_office|default:'All' }}</strong></div>
+      </section>
+
+      <section class="metric-grid audit-metrics">
+        <article class="metric-card"><div class="metric-label">Commands given</div><div class="metric-value">{{ metrics.commands }}</div><div class="metric-note">Proxy/profile request jobs</div></article>
+        <article class="metric-card"><div class="metric-label">Submitted profiles</div><div class="metric-value">{{ metrics.submitted }}</div><div class="metric-note">Before the max-3 safety cap</div></article>
+        <article class="metric-card"><div class="metric-label">Accepted profiles</div><div class="metric-value">{{ metrics.accepted }}</div><div class="metric-note">Server accepted to create</div></article>
+        <article class="metric-card"><div class="metric-label">Profiles opened</div><div class="metric-value">{{ metrics.opened }}</div><div class="metric-note">Unique profile-open events</div></article>
+        <article class="metric-card"><div class="metric-label">Deleted</div><div class="metric-value">{{ metrics.deleted }}</div><div class="metric-note">Deletion events received</div></article>
+        <article class="metric-card"><div class="metric-label">Pending delete</div><div class="metric-value">{{ metrics.pending_delete }}</div><div class="metric-note">Opened without delete event</div></article>
+        <article class="metric-card"><div class="metric-label">Open gap</div><div class="metric-value">{{ metrics.open_gap }}</div><div class="metric-note">Accepted minus opened</div></article>
+        <article class="metric-card"><div class="metric-label">Default-only profiles</div><div class="metric-value">{{ metrics.default_only }}</div><div class="metric-note">Only configured IP-check page activity</div></article>
+      </section>
+
+      <section class="panel-card audit-section"><div class="panel-header"><div><h2>Request accuracy by command</h2><p>Compare submitted, accepted, opened and deleted profiles per device/job.</p></div><span>{{ job_total }} jobs{% if job_total > 500 %} · latest 500 shown{% endif %}</span></div><div class="table-wrap"><table class="data-table audit-table"><thead><tr><th>Time</th><th>Device / system</th><th>Provider / country</th><th>Submitted</th><th>Accepted</th><th>Opened</th><th>Deleted</th><th>Pending delete</th><th>Status</th></tr></thead><tbody>{% for row in job_rows %}<tr><td>{{ row.time|date:'d M Y, H:i:s' }}</td><td><strong>{{ row.device }}</strong><small>sys_{{ row.system }}</small></td><td>{{ row.provider }} / {{ row.country }}</td><td>{{ row.submitted }}</td><td>{{ row.accepted }}</td><td>{{ row.opened }}</td><td>{{ row.deleted }}</td><td>{{ row.pending_delete }}</td><td>{{ row.status }}</td></tr>{% empty %}<tr><td colspan="9" class="empty-state">No commands in this range.</td></tr>{% endfor %}</tbody></table></div></section>
+
+      <section class="panel-card audit-section"><div class="panel-header"><div><h2>Default-only activity</h2><p>Profiles where the only recorded domain was ipwho.is or the previous ipapi.co default.</p></div><span>{{ default_only_rows|length }} profiles</span></div><div class="table-wrap"><table class="data-table audit-table"><thead><tr><th>Last activity</th><th>Device / system</th><th>Profile</th><th>Domains recorded</th></tr></thead><tbody>{% for row in default_only_rows %}<tr><td>{{ row.time|date:'d M Y, H:i:s' }}</td><td><strong>{{ row.device }}</strong><small>sys_{{ row.system }}</small></td><td><strong>{{ row.profile_name }}</strong><small>{{ row.profile_id }}</small></td><td>{{ row.domains }}</td></tr>{% empty %}<tr><td colspan="4" class="empty-state">No default-only profiles in this range.</td></tr>{% endfor %}</tbody></table></div></section>
+
+      <section class="panel-card audit-section"><div class="panel-header"><div><h2>Device lifecycle events</h2><p>Every received profile lifecycle event for the selected office.</p></div><span>{{ lifecycle_rows|length }} events</span></div><div class="table-wrap"><table class="data-table audit-table"><thead><tr><th>Time</th><th>Device / system</th><th>Status</th><th>Profile</th><th>Job</th><th>Detail</th></tr></thead><tbody>{% for row in lifecycle_rows %}<tr><td>{{ row.time|date:'d M Y, H:i:s' }}</td><td><strong>{{ row.device }}</strong><small>sys_{{ row.system }}</small></td><td><span class="status-pill">{{ row.status }}</span></td><td><strong>{{ row.profile_name }}</strong><small>{{ row.profile_id }}</small></td><td>{{ row.job_id }}</td><td class="audit-detail">{{ row.detail|default:'—' }}</td></tr>{% empty %}<tr><td colspan="6" class="empty-state">No lifecycle events in this range.</td></tr>{% endfor %}</tbody></table></div></section>
+    </main>
+  </div>
+</body>
+</html>

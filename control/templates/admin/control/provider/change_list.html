@@ -1,0 +1,12 @@
+{% extends "admin/change_list.html" %}
+{% block object-tools-items %}
+  <li><a href="{% url 'admin:control_provider_upload_catalog' %}" class="addlink">Import all-provider ZIP</a></li>
+  {{ block.super }}
+{% endblock %}
+{% block content %}
+  <div class="help" style="margin: 0 0 16px; padding: 12px; border: 1px solid #79aec8; background: #f4fbff;">
+    <strong>Proxy catalog uploads:</strong>
+    Use <a href="{% url 'admin:control_provider_upload_catalog' %}">Import all-provider ZIP</a> for a ZIP containing <code>P1/US.txt</code>, <code>P2/AU.txt</code>, etc. Each provider row also has its own <strong>Upload / replace</strong> link.
+  </div>
+  {{ block.super }}
+{% endblock %}

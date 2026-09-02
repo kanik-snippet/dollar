@@ -1,0 +1,946 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Tubelight Control API",
+    "version": "1.0.0",
+    "description": "IP and device-gated bootstrap and proxy catalog API for the desktop application."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current server"
+    }
+  ],
+  "paths": {
+    "/healthz/": {
+      "get": {
+        "summary": "Service health check",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "Service is available",
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ip/": {
+      "get": {
+        "summary": "Get the server-observed IPv4",
+        "description": "Call this first and send the returned IPv4 to bootstrap.",
+        "operationId": "getObservedIpv4",
+        "responses": {
+          "200": {
+            "description": "Observed IPv4",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IpResponse"
+                },
+                "example": {
+                  "ok": true,
+                  "ipv4": "203.0.113.10"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/api/v1/bootstrap/": {
+      "post": {
+        "summary": "Authorize the app and load its configuration/catalog",
+        "description": "reported_ipv4 must match the source IPv4 observed by the server. The IPv4 and device_id must match an active ClientAccess row.",
+        "operationId": "bootstrapApp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootstrapRequest"
+              },
+              "example": {
+                "reported_ipv4": "203.0.113.10",
+                "device_id": "stable-device-hash",
+                "app_version": "1.7.35",
+                "app_build": 35,
+                "app_channel": "public",
+                "update_protocol": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized configuration, catalog, and short-lived token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/desktop-releases/{release_id}/": {
+      "get": {
+        "summary": "Download an assigned signed desktop release",
+        "description": "Streams a private EXE only to an authenticated device in the release channel and rollout scope.",
+        "operationId": "downloadDesktopRelease",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "release_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "X-Device-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Client-IPv4",
+            "in": "header",
+            "required": false,
+            "description": "Required when app-reported IPv4 mode is enabled.",
+            "schema": {
+              "type": "string",
+              "format": "ipv4"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized signed Windows executable",
+            "headers": {
+              "X-Content-SHA256": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            },
+            "content": {
+              "application/vnd.microsoft.portable-executable": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/proxy-cities/{provider_code}/{country_code}/{region_code}/": {
+      "get": {
+        "summary": "List ready pre-generated cities for a P2 state",
+        "operationId": "getReadyProxyCities",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider_code",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string", "example": "P2"}
+          },
+          {
+            "name": "country_code",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string", "example": "US"}
+          },
+          {
+            "name": "region_code",
+            "in": "path",
+            "required": true,
+            "description": "Numeric P2 subdivision ID returned by bootstrap",
+            "schema": {"type": "string", "example": "1906"}
+          },
+          {
+            "name": "X-Device-ID",
+            "in": "header",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cities with at least one ready exact proxy session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["allowed", "cities"],
+                  "properties": {
+                    "allowed": {"type": "boolean"},
+                    "cities": {
+                      "type": "array",
+                      "items": {"type": "string"}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/v1/proxy-exit-claims/": {
+      "post": {
+        "summary": "Check or claim a proxy exit IP for 25 hours",
+        "description": "Use action=check as a non-mutating optimization after the connectivity probe and before IPQS. After IPQS acceptance (or immediately after the probe when IPQS is off), use action=claim before browser profile creation. The atomic claim is global across every provider, office and device. A duplicate is HTTP 200 with duplicate=true and must be skipped.",
+        "operationId": "claimProxyExitIp",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Device-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Client-IPv4",
+            "in": "header",
+            "required": false,
+            "description": "Required when app-reported IPv4 mode is enabled.",
+            "schema": {
+              "type": "string",
+              "format": "ipv4"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExitIPClaimRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Claim decision. claimed=false means choose another candidate; it does not extend the existing cooldown.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExitIPClaimResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/proxies/{provider_code}/{country_code}/": {
+      "get": {
+        "summary": "Download a provider/country proxy TXT catalog",
+        "description": "Use the access_token returned by bootstrap. The source IPv4 and X-Device-ID must remain the same.",
+        "operationId": "getProxyCountryFile",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider_code",
+            "in": "path",
+            "required": true,
+            "description": "Provider ID returned in bootstrap catalog",
+            "schema": {
+              "type": "string",
+              "example": "P1"
+            }
+          },
+          {
+            "name": "country_code",
+            "in": "path",
+            "required": true,
+            "description": "Country ID returned in bootstrap catalog",
+            "schema": {
+              "type": "string",
+              "example": "US"
+            }
+          },
+          {
+            "name": "X-Device-ID",
+            "in": "header",
+            "required": true,
+            "description": "Same device_id used in bootstrap",
+            "schema": {
+              "type": "string",
+              "example": "stable-device-hash"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized decrypted catalog content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyFileResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/profile-domains/": {
+      "post": {
+        "summary": "Upload sanitized per-profile domain history after a profile closes",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Device-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Client-IPv4",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "ipv4"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "session_id",
+                  "profile_id",
+                  "session_started_at",
+                  "session_ended_at",
+                  "domains"
+                ],
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "job_id": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "reservation_id": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "group_id": {
+                    "type": "string"
+                  },
+                  "profile_name": {
+                    "type": "string"
+                  },
+                  "profile_id": {
+                    "type": "string"
+                  },
+                  "browser_id": {
+                    "type": "string"
+                  },
+                  "session_started_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "session_ended_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "domains": {
+                    "type": "array",
+                    "maxItems": 2000,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "domain",
+                        "first_visited_at",
+                        "last_visited_at"
+                      ],
+                      "properties": {
+                        "domain": {
+                          "type": "string",
+                          "description": "Hostname only; URLs and paths are rejected."
+                        },
+                        "first_visited_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "last_visited_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "visit_count": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Sanitized domains accepted"
+          },
+          "400": {
+            "description": "Invalid domain-only payload"
+          },
+          "403": {
+            "description": "Access denied"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Signed bootstrap token"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid request",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "IP/device/token is not authorized",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Rate limit exceeded",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "Configuration cannot be loaded",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "const": false
+          },
+          "message": {
+            "type": "string",
+            "example": "Access denied."
+          }
+        },
+        "required": [
+          "allowed",
+          "message"
+        ]
+      },
+      "IpResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "ipv4": {
+            "type": "string",
+            "format": "ipv4"
+          }
+        },
+        "required": [
+          "ok",
+          "ipv4"
+        ]
+      },
+      "BootstrapRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reported_ipv4": {
+            "type": "string",
+            "format": "ipv4"
+          },
+          "device_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "app_version": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "app_build": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9223372036854775807
+          },
+          "app_channel": {
+            "type": "string",
+            "enum": [
+              "public",
+              "testing"
+            ]
+          },
+          "update_protocol": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "reported_ipv4",
+          "device_id",
+          "app_version"
+        ]
+      },
+      "Country": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "sha256"
+        ]
+      },
+      "Provider": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "countries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Country"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "countries"
+        ]
+      },
+      "BootstrapAssignment": {
+        "type": "object",
+        "description": "Server-authoritative browser group and per-device profile label.",
+        "properties": {
+          "browser_group_id": {
+            "type": "string",
+            "description": "Numeric browser group ID. May be blank only for the Testing-name fallback."
+          },
+          "browser_group_name": {
+            "type": "string",
+            "default": "Testing"
+          },
+          "profile_name": {
+            "type": "string",
+            "description": "Fixed profile name assigned to the authorized device."
+          }
+        },
+        "required": [
+          "browser_group_id",
+          "browser_group_name",
+          "profile_name"
+        ]
+      },
+      "DesktopUpdateManifest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "build_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "public",
+              "testing"
+            ]
+          },
+          "product": {
+            "type": "string",
+            "const": "quest-automation"
+          },
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 209715200
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+(?:\\.[0-9]+){2,3}$"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "optional",
+              "silent",
+              "mandatory"
+            ]
+          },
+          "download_path": {
+            "type": "string",
+            "pattern": "^/api/v1/desktop-releases/[1-9]\\d*/$"
+          },
+          "signature": {
+            "type": "string",
+            "contentEncoding": "base64"
+          }
+        },
+        "required": [
+          "id",
+          "build_number",
+          "channel",
+          "product",
+          "schema_version",
+          "sha256",
+          "size",
+          "version",
+          "mode",
+          "download_path",
+          "signature"
+        ]
+      },
+      "BootstrapResponse": {
+        "type": "object",
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "const": true
+          },
+          "schema_version": {
+            "type": "integer"
+          },
+          "config_version": {
+            "type": "integer"
+          },
+          "expires_in": {
+            "type": "integer"
+          },
+          "access_token": {
+            "type": "string"
+          },
+          "tubelight_config": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "assignment": {
+            "$ref": "#/components/schemas/BootstrapAssignment"
+          },
+          "desktop_update": {
+            "description": "Present only for update_protocol >= 1; null when no newer eligible release exists or the requested channel does not match the assigned channel.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DesktopUpdateManifest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalog": {
+            "type": "object",
+            "properties": {
+              "providers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Provider"
+                }
+              }
+            },
+            "required": [
+              "providers"
+            ]
+          }
+        },
+        "required": [
+          "allowed",
+          "schema_version",
+          "config_version",
+          "expires_in",
+          "access_token",
+          "tubelight_config",
+          "assignment",
+          "catalog"
+        ]
+      },
+      "ProxyFileResponse": {
+        "type": "object",
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "const": true
+          },
+          "provider": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "description": "Exact decrypted contents of the stored TXT file"
+          }
+        },
+        "required": [
+          "allowed",
+          "provider",
+          "country",
+          "version",
+          "sha256",
+          "content"
+        ]
+      },
+      "ExitIPClaimRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "exit_ip",
+          "provider"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "check",
+              "claim"
+            ],
+            "default": "claim"
+          },
+          "exit_ip": {
+            "type": "string",
+            "format": "ip",
+            "description": "Exit IP observed through the tested proxy. IPv6 is canonicalized before comparison."
+          },
+          "provider": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,32}$"
+          },
+          "job_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "reservation_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "fraud_score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      },
+      "ExitIPClaimResponse": {
+        "type": "object",
+        "required": [
+          "allowed",
+          "action",
+          "claimed",
+          "duplicate",
+          "idempotent",
+          "exit_ip",
+          "cooldown_seconds",
+          "retry_after_seconds"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "const": true
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "check",
+              "claim"
+            ]
+          },
+          "claimed": {
+            "type": "boolean"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "exit_ip_cooldown"
+            ]
+          },
+          "exit_ip": {
+            "type": "string"
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "available_after": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cooldown_seconds": {
+            "type": "integer",
+            "default": 90000
+          },
+          "retry_after_seconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

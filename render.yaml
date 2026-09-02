@@ -1,0 +1,33 @@
+databases:
+  - name: optix-control-db
+    plan: free
+    databaseName: optix_control
+    user: optix_control
+
+services:
+  - type: web
+    name: optix-control-api
+    runtime: python
+    plan: free
+    buildCommand: bash ./build.sh
+    startCommand: python -m gunicorn controlserver.wsgi:application
+    healthCheckPath: /healthz/
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: optix-control-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: CONFIG_ENCRYPTION_SECRET
+        generateValue: true
+      - key: DEBUG
+        value: "0"
+      - key: TRUST_PROXY_HEADERS
+        value: "1"
+      - key: REQUIRE_REPORTED_IP_MATCH
+        value: "1"
+      - key: BOOTSTRAP_TOKEN_MAX_AGE
+        value: "300"
+      - key: BOOTSTRAP_RATE_LIMIT_PER_MINUTE
+        value: "30"

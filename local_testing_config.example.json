@@ -1,0 +1,16 @@
+{
+  "bundle_name": "LOCAL-TESTING",
+  "browser_group_id": "2287",
+  "browser_group_name": "Local Testing",
+  "office_name": "LOCAL",
+  "system_number": "local-1",
+  "profile_name": "Local Test Device",
+  "config": {
+    "APP_API_KEY": "PASTE_LOCAL_YS_API_KEY_HERE",
+    "APP_BASE_URL": "http://127.0.0.1:54032",
+    "APP_START_URL": "https://ipapi.co/",
+    "OFFICE_NAME": "LOCAL",
+    "SYSTEM_NUMBER": "local-1",
+    "P1_PROTOCOL": "http"
+  }
+}

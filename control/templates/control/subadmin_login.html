@@ -1,0 +1,29 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Sub-admin sign in</title>
+  <link rel="stylesheet" href="{% static 'control/subadmin.css' %}">
+</head>
+<body class="subadmin-auth">
+  <main class="auth-card">
+    <div class="auth-mark">AC</div>
+    <span class="auth-eyebrow">Operations workspace</span>
+    <h1>Sub-admin sign in</h1>
+    <p class="auth-copy">Use the account assigned to you by the administrator.</p>
+    {% if error %}<div class="form-error" role="alert">{{ error }}</div>{% endif %}
+    {% if request.GET.disabled %}<div class="form-error" role="alert">This account is inactive. Contact the administrator.</div>{% endif %}
+    <form method="post" class="auth-form">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next|default:'' }}">
+      <label>Username<input name="username" autocomplete="username" required autofocus></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="primary-button" type="submit">Sign in</button>
+    </form>
+    <p class="auth-foot">Separate from the Super Admin control panel</p>
+  </main>
+</body>
+</html>

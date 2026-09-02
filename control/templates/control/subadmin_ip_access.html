@@ -1,0 +1,47 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>IP access · Sub-admin</title>
+  <link rel="stylesheet" href="{% static 'control/subadmin.css' %}">
+</head>
+<body class="subadmin-app">
+  <aside class="subadmin-sidebar">
+    <div class="subadmin-brand"><span class="brand-mark">AC</span><div><strong>Automation</strong><small>Sub-admin workspace</small></div></div>
+    <div class="workspace-state"><span class="pulse-dot"></span> Live workspace</div>
+    <nav class="subadmin-nav" aria-label="Sub-admin navigation">
+      <a href="{% url 'control:subadmin-dashboard' %}"><span>OV</span>Overview</a>
+      <a href="{% url 'control:subadmin-domains' %}"><span>DA</span>Domain activity</a>
+      <a href="{% url 'control:subadmin-suspicious' %}"><span>SA</span>Suspicious activity</a>
+      <a class="active" href="{% url 'control:subadmin-ip-access' %}"><span>IP</span>IP access</a>
+    </nav>
+    <div class="subadmin-user">
+      <div class="avatar">{{ account.user.username|slice:':1'|upper }}</div>
+      <div><strong>{{ account.display_name|default:account.user.username }}</strong><small>{{ account.user.username }}</small></div>
+      <form method="post" action="{% url 'control:subadmin-logout' %}">{% csrf_token %}<button type="submit">Sign out</button></form>
+    </div>
+  </aside>
+  <main class="subadmin-main">
+    <header class="subadmin-topbar">
+      <div><span class="auth-eyebrow">Sub-admin workspace</span><h1>IP access</h1><p>Allow an additional public IPv4 for a visible client without changing its primary IP.</p></div>
+      <span class="updated">Excluded offices/groups hidden</span>
+    </header>
+    <section class="subadmin-content">
+      {% if messages %}<div class="ip-messages">{% for message in messages %}<div class="ip-message {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+      <div class="ip-notice">Only clients from offices and browser groups assigned to this Sub-admin are listed. Primary IPv4 entries cannot be removed here.</div>
+      <div class="client-ip-list">
+        {% for client in clients %}
+        <article class="client-ip-card">
+          <div class="client-ip-head"><div><span class="auth-eyebrow">{{ client.office_name }} · {{ client.system_number }}</span><h2>{{ client.name }}</h2><p>{{ client.device_id|default:'No device ID' }} · Group {{ client.config_bundle.browser_group_id|default:'—' }}</p></div><span class="primary-ip">Primary: {{ client.ipv4 }}</span></div>
+          <div class="allowed-ip-list"><div class="allowed-ip primary"><span>{{ client.ipv4 }}</span><small>Primary</small></div>{% for item in client.visible_allowed_ips %}<div class="allowed-ip"><span>{{ item.ipv4 }}</span><small>Additional{% if not item.active %} · inactive{% endif %}</small><form method="post">{% csrf_token %}<input type="hidden" name="client_id" value="{{ client.pk }}"><input type="hidden" name="ipv4" value="{{ item.ipv4 }}"><input type="hidden" name="action" value="remove"><button type="submit">Remove</button></form></div>{% endfor %}</div>
+          <form class="add-ip-form" method="post">{% csrf_token %}<input type="hidden" name="client_id" value="{{ client.pk }}"><input type="hidden" name="action" value="add"><label>Additional public IPv4<input name="ipv4" inputmode="numeric" placeholder="203.0.113.10" required></label><button class="primary-button" type="submit">Allow IP</button></form>
+        </article>
+        {% empty %}<article class="welcome-card"><h2>No visible clients</h2><p>All clients may be hidden by this account's Office/Group exclusions, or no access records exist yet.</p></article>{% endfor %}
+      </div>
+    </section>
+  </main>
+</body>
+</html>

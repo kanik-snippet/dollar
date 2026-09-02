@@ -1,0 +1,51 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>{{ title }} · Sub-admin</title>
+  <link rel="stylesheet" href="{% static 'control/subadmin.css' %}">
+</head>
+<body class="subadmin-app">
+  <aside class="subadmin-sidebar">
+    <div class="subadmin-brand"><span class="brand-mark">AC</span><div><strong>Automation</strong><small>Sub-admin workspace</small></div></div>
+    <div class="workspace-state"><span class="pulse-dot"></span> Live workspace</div>
+    <nav class="subadmin-nav" aria-label="Sub-admin navigation">
+      <a class="{% if active_page == 'overview' %}active{% endif %}" href="{% url 'control:subadmin-dashboard' %}"><span>OV</span>Overview</a>
+      <a class="{% if active_page == 'domains' %}active{% endif %}" href="{% url 'control:subadmin-domains' %}"><span>DA</span>Domain activity</a>
+      <a class="{% if active_page == 'suspicious' %}active{% endif %}" href="{% url 'control:subadmin-suspicious' %}"><span>SA</span>Suspicious activity</a>
+    </nav>
+    <div class="subadmin-user">
+      <div class="avatar">{{ account.user.username|slice:':1'|upper }}</div>
+      <div><strong>{{ account.display_name|default:account.user.username }}</strong><small>{{ account.user.username }}</small></div>
+      <form method="post" action="{% url 'control:subadmin-logout' %}">{% csrf_token %}<button type="submit">Sign out</button></form>
+    </div>
+  </aside>
+  <main class="subadmin-main">
+    <header class="subadmin-topbar">
+      <div><span class="auth-eyebrow">Sub-admin workspace</span><h1>{{ title }}</h1><p>{{ description }}</p></div>
+      <span class="updated">Visible data only</span>
+    </header>
+    <section class="subadmin-content">
+      <form class="activity-filters" method="get">
+        <label>Period<select name="range"><option value="24h" {% if selected_range == '24h' %}selected{% endif %}>Last 24 hours</option><option value="7d" {% if selected_range == '7d' %}selected{% endif %}>Last 7 days</option><option value="30d" {% if selected_range == '30d' %}selected{% endif %}>Last 30 days</option></select></label><label>From date & time<input type="datetime-local" name="from" value="{{ from_value }}"></label><label>To date & time<input type="datetime-local" name="to" value="{{ to_value }}"></label>
+        <label class="filter-wide">Search domain<input name="q" value="{{ query }}" placeholder="example.com"></label>
+        {% if kind == 'domain' %}<label>Office<select name="office"><option value="">All offices</option>{% for item in offices %}<option value="{{ item }}" {% if office == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>{% endif %}
+        <button class="primary-button filter-button" type="submit">Apply</button>
+      </form>
+      <div class="metric-grid activity-metrics">
+        <article class="metric"><span>Visits</span><strong>{{ metrics.visits }}</strong><small>Visible records</small></article>
+        <article class="metric"><span>Domains</span><strong>{{ metrics.domains }}</strong><small>Visible unique domains</small></article>
+        <article class="metric"><span>Profiles</span><strong>{{ metrics.profiles }}</strong><small>Profiles with activity</small></article>
+      </div>
+      <article class="activity-card">
+        <div class="activity-card-head"><div><h2>{{ title }}</h2><p>Excluded domains are removed before metrics and rows are calculated.</p></div><span>{{ page.paginator.count }} records</span></div>
+        <div class="activity-table-wrap"><table class="activity-table"><thead><tr><th>Domain</th><th>Profile</th><th>Office / system</th><th>Group</th><th>Visits</th><th>Last visited</th></tr></thead><tbody>{% for row in rows %}<tr><td><strong>{{ row.domain }}</strong></td><td><strong>{{ row.profile_name }}</strong><small>{{ row.profile_id }}</small></td><td>{{ row.office_name }} / {{ row.system_number }}<small>{{ row.device_name }}</small></td><td>{{ row.group_id|default:'—' }}</td><td>{{ row.visits }}</td><td>{{ row.last_visited_at|date:'d M Y, H:i:s' }}</td></tr>{% empty %}<tr><td colspan="6" class="empty-row">No visible activity in this period.</td></tr>{% endfor %}</tbody></table></div>
+        {% if page.has_other_pages %}<div class="activity-pagination"><span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span><div>{% if page.has_previous %}<a href="?range={{ selected_range }}&from={{ from_value|urlencode }}&to={{ to_value|urlencode }}&q={{ query|urlencode }}&office={{ office|urlencode }}&page={{ page.previous_page_number }}">Previous</a>{% endif %}{% if page.has_next %}<a href="?range={{ selected_range }}&from={{ from_value|urlencode }}&to={{ to_value|urlencode }}&q={{ query|urlencode }}&office={{ office|urlencode }}&page={{ page.next_page_number }}">Next</a>{% endif %}</div></div>{% endif %}
+      </article>
+    </section>
+  </main>
+</body>
+</html>

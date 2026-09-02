@@ -1,0 +1,85 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#10251c">
+  <title>Mobile Quick Ops</title>
+  <link rel="stylesheet" href="{% static 'control/mobile_ops.css' %}">
+</head>
+<body>
+  <div class="ops-app" id="mobile-ops" data-api-url="{{ api_url }}">
+    <header class="ops-header">
+      <div>
+        <span class="ops-kicker">Automation Control Center</span>
+        <h1>Mobile Quick Ops</h1>
+        <p>Office proxy, access IP and YSBrowser controls.</p>
+      </div>
+      <div class="header-actions">
+        <a href="{{ panel_url }}">Full panel</a>
+        <a href="{{ admin_url }}">Admin</a>
+      </div>
+    </header>
+
+    <main class="ops-main">
+      <section class="agent-strip" id="agent-strip" aria-live="polite">
+        <span class="agent-dot"></span>
+        <div><strong>YS bridge</strong><small>Checking office PC...</small></div>
+      </section>
+
+      <div class="notice" id="notice" role="status" hidden></div>
+
+      <section class="ops-grid" aria-label="Quick operations">
+        <article class="ops-card">
+          <div class="card-heading"><span class="card-number">01</span><div><h2>Generate proxies</h2><p>One country for every active bundle in an office.</p></div></div>
+          <form id="proxy-form" class="ops-form">
+            <label>Office<select name="office" data-office-select required><option value="">Choose office</option></select></label>
+            <div class="split">
+              <label>Provider<select name="provider" required></select></label>
+              <label>Country code<input name="country" maxlength="2" inputmode="text" autocapitalize="characters" placeholder="US" required></label>
+            </div>
+            <label>Target per bundle<input name="target_count" type="number" value="1000" min="1" max="5000" required></label>
+            <button type="submit">Generate now</button>
+          </form>
+        </article>
+
+        <article class="ops-card">
+          <div class="card-heading"><span class="card-number">02</span><div><h2>Add app access IP</h2><p>Add one IPv4 to every active device in the office.</p></div></div>
+          <form id="office-ip-form" class="ops-form">
+            <label>Office<select name="office" data-office-select required><option value="">Choose office</option></select></label>
+            <label>Public IPv4<input name="ipv4" inputmode="decimal" placeholder="203.0.113.10" required></label>
+            <button type="submit">Add to all devices</button>
+          </form>
+        </article>
+
+        <article class="ops-card">
+          <div class="card-heading"><span class="card-number">03</span><div><h2>YSBrowser whitelist</h2><p>Queue an IP add/remove on the office PC.</p></div></div>
+          <form id="ys-whitelist-form" class="ops-form">
+            <label>Public IPv4<input name="ipv4" inputmode="decimal" placeholder="203.0.113.10" required></label>
+            <label>Action<select name="mode"><option value="add">Add to whitelist</option><option value="remove">Remove from whitelist</option></select></label>
+            <button type="submit">Queue whitelist action</button>
+          </form>
+        </article>
+
+        <article class="ops-card danger-card">
+          <div class="card-heading"><span class="card-number">04</span><div><h2>Delete YS environments</h2><p>Closes and deletes profiles belonging to the selected office groups.</p></div></div>
+          <form id="ys-delete-form" class="ops-form">
+            <label>Office<select name="office" id="delete-office" required><option value="">Choose office</option><option value="__all__">All offices</option></select></label>
+            <label>Type DELETE to confirm<input name="confirmation" autocomplete="off" placeholder="DELETE" required></label>
+            <button type="submit" class="danger-button">Queue environment deletion</button>
+          </form>
+        </article>
+      </section>
+
+      <section class="history-section">
+        <div class="section-title"><div><span class="ops-kicker">Audit trail</span><h2>Recent YS commands</h2></div><button id="refresh" class="quiet-button" type="button">Refresh</button></div>
+        <div id="command-list" class="command-list"><p class="empty">Loading commands...</p></div>
+      </section>
+    </main>
+    <div id="csrf-token" hidden>{% csrf_token %}</div>
+  </div>
+  <script src="{% static 'control/mobile_ops.js' %}" defer></script>
+</body>
+</html>

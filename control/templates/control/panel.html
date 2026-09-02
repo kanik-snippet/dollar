@@ -1,0 +1,177 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>{{ panel_title }}</title>
+  <link rel="stylesheet" href="{% static 'control/panel.css' %}">
+</head>
+<body>
+  <div class="mobile-overlay" data-sidebar-close></div>
+  <div class="app-shell" id="panel-app"
+       data-overview-url="{% url 'control:panel-overview-api' %}"
+       data-devices-url="{% url 'control:panel-devices-api' %}"
+       data-subadmins-url="{% url 'control:panel-subadmins-api' %}"
+       data-domain-url="{% url 'control:panel-domain-activity-api' %}"
+       data-suspicious-url="{% url 'control:panel-suspicious-activity-api' %}"
+       data-domain-export-url="{% url 'control:panel-domain-activity-export' %}"
+       data-resource-url="{% url 'control:panel-resource-api' resource='__resource__' %}">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand">
+        <div class="brand-mark">AC</div>
+        <div>
+          <strong>Automation</strong>
+          <span>Control Center</span>
+        </div>
+      </div>
+      <div class="environment">
+        <span class="pulse-dot"></span>
+        <span>Live operations</span>
+      </div>
+
+      <nav class="nav-stack">
+        <div class="nav-section">
+          <p>Operations</p>
+          <button class="nav-item is-active" data-route="overview">
+            <span class="nav-icon">OV</span><span>Overview</span>
+          </button>
+          <button class="nav-item" data-route="domains">
+            <span class="nav-icon">DA</span><span>Domain activity</span>
+          </button>
+          <button class="nav-item" data-route="suspicious">
+            <span class="nav-icon">SA</span><span>Suspicious activity</span>
+          </button>
+          <a class="nav-item" href="{% url 'control:panel-office-audit' %}">
+            <span class="nav-icon">OA</span><span>Office profile audit</span>
+          </a>
+        </div>
+
+        <div class="nav-section">
+          <p>Management</p>
+          <button class="nav-item" data-route="devices">
+            <span class="nav-icon">DV</span><span>Devices</span>
+          </button>
+          <a class="nav-item" href="{% url 'control:panel-office-ip-whitelist' %}">
+            <span class="nav-icon">IP</span><span>Office IP whitelist</span>
+          </a>
+          <a class="nav-item" href="{% url 'control:mobile-ops' %}">
+            <span class="nav-icon">MO</span><span>Mobile quick ops</span>
+          </a>
+          <button class="nav-item" data-route="configurations">
+            <span class="nav-icon">CF</span><span>Config bundles</span>
+          </button>
+          <button class="nav-item" data-route="subadmins"><span class="nav-icon">SA</span><span>Sub-admin access</span></button>
+          <button class="nav-item" data-route="groups">
+            <span class="nav-icon">GR</span><span>Browser groups</span>
+          </button>
+          <button class="nav-item" data-route="providers">
+            <span class="nav-icon">PR</span><span>Providers</span>
+          </button>
+          <button class="nav-item" data-route="proxy-catalog">
+            <span class="nav-icon">PC</span><span>Proxy catalog</span>
+          </button>
+          <button class="nav-item" data-route="extensions">
+            <span class="nav-icon">EX</span><span>Extensions</span>
+          </button>
+        </div>
+
+        <div class="nav-section">
+          <p>Infrastructure</p>
+          <button class="nav-item" data-route="proxy-pools">
+            <span class="nav-icon">PL</span><span>Proxy pools</span>
+          </button>
+          <button class="nav-item" data-route="proxy-inventory">
+            <span class="nav-icon">PI</span><span>Proxy inventory</span>
+          </button>
+          <button class="nav-item" data-route="proxy-jobs">
+            <span class="nav-icon">JB</span><span>Generation jobs</span>
+          </button>
+          <button class="nav-item" data-route="reservations">
+            <span class="nav-icon">RS</span><span>Reservations</span>
+          </button>
+        </div>
+
+        <div class="nav-section">
+          <p>Audit</p>
+          <button class="nav-item" data-route="profile-activity">
+            <span class="nav-icon">PA</span><span>Profile activity</span>
+          </button>
+          <button class="nav-item" data-route="access-audit">
+            <span class="nav-icon">AA</span><span>Access audit</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-avatar">{{ request.user.username|slice:":1"|upper }}</div>
+        <div class="user-copy">
+          <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
+          <span>Administrator</span>
+        </div>
+        <div class="user-actions">
+          <a href="{{ admin_url }}" title="Open Django admin">Admin</a>
+          <form method="post" action="{{ logout_url }}">
+            {% csrf_token %}
+            <button type="submit">Sign out</button>
+          </form>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="mobile-menu" type="button" data-sidebar-open aria-label="Open menu">Menu</button>
+          <div>
+            <div class="breadcrumb">Control Center <span>/</span> <span id="page-breadcrumb">Overview</span></div>
+            <h1 id="page-title">Operations overview</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span class="sync-status"><span class="pulse-dot"></span><span id="sync-label">Live data</span></span>
+          <button class="button button-secondary" type="button" id="refresh-button">Refresh</button>
+        </div>
+      </header>
+
+      <section class="content" id="panel-content" aria-live="polite">
+        <div class="loading-state">
+          <div class="loading-line loading-line-wide"></div>
+          <div class="loading-grid">
+            <div class="loading-card"></div><div class="loading-card"></div>
+            <div class="loading-card"></div><div class="loading-card"></div>
+          </div>
+          <div class="loading-table"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="detail-dialog" id="detail-dialog">
+    <div class="dialog-header">
+      <div>
+        <span class="eyebrow">Domain record</span>
+        <h2 id="detail-title">Activity details</h2>
+      </div>
+      <button type="button" class="dialog-close" data-dialog-close aria-label="Close details">Close</button>
+    </div>
+    <div id="detail-content"></div>
+  </dialog>
+
+  <dialog class="detail-dialog management-dialog" id="device-dialog"></dialog>
+  <dialog class="detail-dialog management-dialog" id="subadmin-dialog"></dialog>
+
+  <template id="error-template">
+    <div class="empty-state">
+      <div class="empty-symbol">!</div>
+      <h2>Data could not be loaded</h2>
+      <p>Refresh the page or verify that your administrator session is still active.</p>
+      <button class="button button-primary" type="button" data-retry>Try again</button>
+    </div>
+  </template>
+
+  <span id="panel-csrf-token" hidden>{% csrf_token %}</span>
+  <script src="{% static 'control/panel.js' %}" defer></script>
+</body>
+</html>

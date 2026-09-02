@@ -1,0 +1,119 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Sub-admin dashboard</title>
+  <link rel="stylesheet" href="{% static 'control/subadmin.css' %}">
+</head>
+<body class="subadmin-app">
+  <aside class="subadmin-sidebar">
+    <div class="subadmin-brand"><span class="brand-mark">AC</span><div><strong>Automation</strong><small>Sub-admin workspace</small></div></div>
+    <div class="workspace-state"><span class="pulse-dot"></span> Live workspace</div>
+    <nav class="subadmin-nav" aria-label="Sub-admin navigation">
+      <a class="active" href="{% url 'control:subadmin-dashboard' %}"><span>OV</span>Overview</a>
+      <a href="{% url 'control:subadmin-domains' %}"><span>DA</span>Domain activity</a>
+      <a href="{% url 'control:subadmin-suspicious' %}"><span>SA</span>Suspicious activity</a>
+      <a href="{% url 'control:subadmin-devices' %}"><span>DV</span>Devices</a>
+    </nav>
+    <div class="subadmin-user">
+      <div class="avatar">{{ account.user.username|slice:':1'|upper }}</div>
+      <div><strong>{{ account.display_name|default:account.user.username }}</strong><small>{{ account.user.username }}</small></div>
+      <form method="post" action="{% url 'control:subadmin-logout' %}">{% csrf_token %}<button type="submit">Sign out</button></form>
+    </div>
+  </aside>
+  <main class="subadmin-main">
+    <header class="subadmin-topbar">
+      <div><span class="auth-eyebrow">Sub-admin workspace</span><h1>Overview</h1><p>Operational activity from the last 24 hours.</p></div>
+      <div class="topbar-actions"><button class="primary-button topbar-ip-button" type="button" data-open-ip-modal>IP access</button><span class="updated">Updated {{ generated_at|date:'d M Y, H:i' }}</span></div>
+    </header>
+    <section class="subadmin-content">
+      {% if messages %}<div class="ip-messages">{% for message in messages %}<div class="ip-message {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+      <div class="metric-grid">
+        <article class="metric"><span>Profiles opened</span><strong>{{ metrics.profiles_opened }}</strong><small>Successful opens</small></article>
+        <article class="metric"><span>Domain visits</span><strong>{{ metrics.domain_visits }}</strong><small>{{ metrics.unique_domains }} unique domains</small></article>
+        <article class="metric"><span>Suspicious activity</span><strong>{{ metrics.suspicious }}</strong><small>Monitored-domain matches</small></article>
+      </div>
+      <article class="welcome-card"><span class="auth-eyebrow">Ready to configure</span><h2>Your sub-admin dashboard is active.</h2><p>This workspace is intentionally separate from Super Admin. Use IP access in the top-right to manage the allowed public IPs for a visible device.</p></article>
+    </section>
+  </main>
+
+  {{ ip_client_options|json_script:"ip-client-options" }}
+  <dialog class="ip-modal" id="ip-access-modal" aria-labelledby="ip-modal-title">
+    <div class="ip-modal-head"><div><span class="auth-eyebrow">Device access</span><h2 id="ip-modal-title">Manage IP access</h2><p>Choose a visible office and system, then save one or more public IPv4 addresses.</p></div><button class="ip-modal-close" type="button" data-close-ip-modal aria-label="Close">&times;</button></div>
+    <form class="ip-modal-form" method="post" action="{% url 'control:subadmin-ip-access' %}">
+      {% csrf_token %}
+      <input type="hidden" name="client_id" id="ip-client-id">
+      <div class="ip-modal-grid">
+        <label>Office<select id="ip-office-select" required><option value="">Choose office</option></select></label>
+        <label>System number<select id="ip-system-select" required disabled><option value="">Choose system</option></select></label>
+      </div>
+      <div class="ip-device-summary" id="ip-device-summary">Select a device to view its current IP access.</div>
+      <div class="ip-fields-head"><span>Allowed public IPv4</span><button class="ip-plus" type="button" data-add-ip>+ Add another IP</button></div>
+      <div class="ip-fields" id="ip-fields"></div>
+      <div class="ip-modal-actions"><button class="secondary-button" type="button" data-close-ip-modal>Cancel</button><button class="primary-button" type="submit">Save IP access</button></div>
+    </form>
+  </dialog>
+
+  <script>
+  (() => {
+    const dataNode = document.getElementById('ip-client-options');
+    const clients = dataNode ? JSON.parse(dataNode.textContent || '[]') : [];
+    const modal = document.getElementById('ip-access-modal');
+    const office = document.getElementById('ip-office-select');
+    const system = document.getElementById('ip-system-select');
+    const clientId = document.getElementById('ip-client-id');
+    const fields = document.getElementById('ip-fields');
+    const summary = document.getElementById('ip-device-summary');
+    const offices = [...new Set(clients.map(item => item.office).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+    const addOption = (select, value, label) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    };
+    const currentClient = () => clients.find(item => String(item.id) === String(system.value));
+    const addIpRow = (value, removable, required) => {
+      const row = document.createElement('div');
+      row.className = 'ip-row';
+      const input = document.createElement('input');
+      input.type = 'text'; input.name = 'ipv4'; input.inputMode = 'numeric'; input.placeholder = '203.0.113.10'; input.value = value || ''; input.required = required;
+      row.appendChild(input);
+      if (removable) {
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.className = 'ip-remove'; remove.textContent = 'Remove';
+        remove.addEventListener('click', () => row.remove());
+        row.appendChild(remove);
+      }
+      fields.appendChild(row);
+    };
+    const renderClient = () => {
+      const client = currentClient();
+      fields.innerHTML = '';
+      clientId.value = client ? client.id : '';
+      if (!client) { summary.textContent = 'Select a device to view its current IP access.'; return; }
+      summary.textContent = `${client.name} · ${client.office} / ${client.system}`;
+      addIpRow(client.primary, false, true);
+      (client.additional || []).forEach(ip => addIpRow(ip, true, false));
+    };
+    const populateOffices = () => offices.forEach(item => addOption(office, item, item));
+    const populateSystems = () => {
+      system.innerHTML = '<option value="">Choose system</option>';
+      clients.filter(item => item.office === office.value).forEach(item => addOption(system, item.id, `${item.system} · ${item.name}`));
+      system.disabled = !office.value;
+      renderClient();
+    };
+    office.addEventListener('change', populateSystems);
+    system.addEventListener('change', renderClient);
+    document.querySelector('[data-add-ip]').addEventListener('click', () => addIpRow('', true, false));
+    document.querySelectorAll('[data-open-ip-modal]').forEach(button => button.addEventListener('click', () => { populateSystems(); if (modal.showModal) modal.showModal(); else modal.setAttribute('open', ''); }));
+    document.querySelectorAll('[data-close-ip-modal]').forEach(button => button.addEventListener('click', () => modal.close ? modal.close() : modal.removeAttribute('open')));
+    modal.addEventListener('click', event => { if (event.target === modal) { if (modal.close) modal.close(); else modal.removeAttribute('open'); } });
+    populateOffices();
+  })();
+  </script>
+</body>
+</html>
