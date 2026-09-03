@@ -112,6 +112,12 @@ class ClientAccess(models.Model):
         (ACTIVATION_REQUIRE, "Require Dollar activation for this PC"),
         (ACTIVATION_BYPASS, "Legacy bypass — do not require Dollar activation"),
     )
+    REMOTE_ACTION_NONE = ""
+    REMOTE_ACTION_UNINSTALL = "uninstall"
+    REMOTE_ACTION_CHOICES = (
+        (REMOTE_ACTION_NONE, "No remote action"),
+        (REMOTE_ACTION_UNINSTALL, "Uninstall Dollar"),
+    )
 
     name = models.CharField(max_length=120)
     ipv4 = models.GenericIPAddressField(protocol="IPv4")
@@ -172,6 +178,23 @@ class ClientAccess(models.Model):
     show_logs_override = models.BooleanField(
         default=False,
         help_text="Show the Logs tab on this PC when the per-PC override is enabled.",
+    )
+    desktop_remote_action = models.CharField(
+        max_length=24,
+        choices=REMOTE_ACTION_CHOICES,
+        blank=True,
+        default=REMOTE_ACTION_NONE,
+        help_text="Pending command delivered to this authorized Dollar installation.",
+    )
+    desktop_remote_action_revision = models.PositiveBigIntegerField(default=0)
+    desktop_remote_action_requested_at = models.DateTimeField(blank=True, null=True)
+    desktop_remote_action_acknowledged_at = models.DateTimeField(blank=True, null=True)
+    desktop_remote_action_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="requested_desktop_remote_actions",
     )
     notes = models.TextField(blank=True)
     last_seen_at = models.DateTimeField(blank=True, null=True)
@@ -1613,6 +1636,15 @@ class OfficeAuditDomain(ProfileDomainActivity):
 
 
 class BootstrapAudit(models.Model):
+    REVIEW_PENDING = "pending"
+    REVIEW_APPROVED = "approved"
+    REVIEW_REJECTED = "rejected"
+    REVIEW_CHOICES = (
+        (REVIEW_PENDING, "Pending"),
+        (REVIEW_APPROVED, "Approved"),
+        (REVIEW_REJECTED, "Rejected"),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     client = models.ForeignKey(
         ClientAccess,
@@ -1627,6 +1659,21 @@ class BootstrapAudit(models.Model):
     allowed = models.BooleanField(default=False)
     reason = models.CharField(max_length=80)
     app_version = models.CharField(max_length=40, blank=True)
+    read_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    review_status = models.CharField(
+        max_length=16,
+        choices=REVIEW_CHOICES,
+        default=REVIEW_PENDING,
+        db_index=True,
+    )
+    reviewed_at = models.DateTimeField(blank=True, null=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="reviewed_bootstrap_audits",
+    )
 
     class Meta:
         ordering = ("-created_at",)
@@ -1634,6 +1681,10 @@ class BootstrapAudit(models.Model):
             models.Index(
                 fields=("allowed", "-id"),
                 name="audit_allowed_id_idx",
+            ),
+            models.Index(
+                fields=("allowed", "review_status", "-id"),
+                name="audit_review_status_idx",
             ),
         ]
 

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import mobile_ops, panel_resources, panel_views, subadmin_views, views
+from . import mobile_ops, panel_operations, panel_resources, panel_views, subadmin_views, views
 
 
 app_name = "control"
@@ -28,6 +28,9 @@ urlpatterns = [
     path("subadmin/ip-access/", subadmin_views.subadmin_ip_access, name="subadmin-ip-access"),
     path("subadmin/logout/", subadmin_views.subadmin_logout, name="subadmin-logout"),
     path("panel/api/devices/", panel_views.panel_devices_api, name="panel-devices-api"),
+    path("panel/api/access/", panel_operations.panel_access_api, name="panel-access-api"),
+    path("panel/api/proxy/", panel_operations.panel_proxy_api, name="panel-proxy-api"),
+    path("panel/api/optix/", panel_operations.panel_optix_api, name="panel-optix-api"),
     path("panel/api/subadmins/", panel_views.panel_subadmins_api, name="panel-subadmins-api"),
     path(
         "panel/api/overview/",
@@ -70,6 +73,7 @@ urlpatterns = [
         name="ys-bridge-complete",
     ),
     path("api/v1/bootstrap/", views.bootstrap, name="bootstrap"),
+    path("api/v1/desktop-command/ack/", views.desktop_command_ack, name="desktop-command-ack"),
     path("api/v1/proxy-jobs/", views.create_proxy_job, name="proxy-job-create"),
     path("api/v1/proxy-jobs/<int:job_id>/", views.proxy_job_detail, name="proxy-job-detail"),
     path(

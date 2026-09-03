@@ -11,19 +11,15 @@
 <body>
   <div class="mobile-overlay" data-sidebar-close></div>
   <div class="app-shell" id="panel-app"
-       data-overview-url="{% url 'control:panel-overview-api' %}"
-       data-devices-url="{% url 'control:panel-devices-api' %}"
-       data-subadmins-url="{% url 'control:panel-subadmins-api' %}"
-       data-domain-url="{% url 'control:panel-domain-activity-api' %}"
-       data-suspicious-url="{% url 'control:panel-suspicious-activity-api' %}"
-       data-domain-export-url="{% url 'control:panel-domain-activity-export' %}"
-       data-resource-url="{% url 'control:panel-resource-api' resource='__resource__' %}">
+       data-access-url="{% url 'control:panel-access-api' %}"
+       data-proxy-url="{% url 'control:panel-proxy-api' %}"
+       data-optix-url="{% url 'control:panel-optix-api' %}">
     <aside class="sidebar" aria-label="Primary navigation">
       <div class="brand">
-        <div class="brand-mark">AC</div>
+        <div class="brand-mark">$</div>
         <div>
-          <strong>Automation</strong>
-          <span>Control Center</span>
+          <strong>Dollar</strong>
+          <span>Operations</span>
         </div>
       </div>
       <div class="environment">
@@ -34,73 +30,9 @@
       <nav class="nav-stack">
         <div class="nav-section">
           <p>Operations</p>
-          <button class="nav-item is-active" data-route="overview">
-            <span class="nav-icon">OV</span><span>Overview</span>
-          </button>
-          <button class="nav-item" data-route="domains">
-            <span class="nav-icon">DA</span><span>Domain activity</span>
-          </button>
-          <button class="nav-item" data-route="suspicious">
-            <span class="nav-icon">SA</span><span>Suspicious activity</span>
-          </button>
-          <a class="nav-item" href="{% url 'control:panel-office-audit' %}">
-            <span class="nav-icon">OA</span><span>Office profile audit</span>
-          </a>
-        </div>
-
-        <div class="nav-section">
-          <p>Management</p>
-          <button class="nav-item" data-route="devices">
-            <span class="nav-icon">DV</span><span>Devices</span>
-          </button>
-          <a class="nav-item" href="{% url 'control:panel-office-ip-whitelist' %}">
-            <span class="nav-icon">IP</span><span>Office IP whitelist</span>
-          </a>
-          <a class="nav-item" href="{% url 'control:mobile-ops' %}">
-            <span class="nav-icon">MO</span><span>Mobile quick ops</span>
-          </a>
-          <button class="nav-item" data-route="configurations">
-            <span class="nav-icon">CF</span><span>Config bundles</span>
-          </button>
-          <button class="nav-item" data-route="subadmins"><span class="nav-icon">SA</span><span>Sub-admin access</span></button>
-          <button class="nav-item" data-route="groups">
-            <span class="nav-icon">GR</span><span>Browser groups</span>
-          </button>
-          <button class="nav-item" data-route="providers">
-            <span class="nav-icon">PR</span><span>Providers</span>
-          </button>
-          <button class="nav-item" data-route="proxy-catalog">
-            <span class="nav-icon">PC</span><span>Proxy catalog</span>
-          </button>
-          <button class="nav-item" data-route="extensions">
-            <span class="nav-icon">EX</span><span>Extensions</span>
-          </button>
-        </div>
-
-        <div class="nav-section">
-          <p>Infrastructure</p>
-          <button class="nav-item" data-route="proxy-pools">
-            <span class="nav-icon">PL</span><span>Proxy pools</span>
-          </button>
-          <button class="nav-item" data-route="proxy-inventory">
-            <span class="nav-icon">PI</span><span>Proxy inventory</span>
-          </button>
-          <button class="nav-item" data-route="proxy-jobs">
-            <span class="nav-icon">JB</span><span>Generation jobs</span>
-          </button>
-          <button class="nav-item" data-route="reservations">
-            <span class="nav-icon">RS</span><span>Reservations</span>
-          </button>
-        </div>
-
-        <div class="nav-section">
-          <p>Audit</p>
-          <button class="nav-item" data-route="profile-activity">
-            <span class="nav-icon">PA</span><span>Profile activity</span>
-          </button>
-          <button class="nav-item" data-route="access-audit">
-            <span class="nav-icon">AA</span><span>Access audit</span>
-          </button>
+          <button class="nav-item is-active" data-route="access"><span class="nav-icon">A</span><span>Access</span></button>
+          <button class="nav-item" data-route="proxy"><span class="nav-icon">P</span><span>Proxy</span></button>
+          <button class="nav-item" data-route="optix"><span class="nav-icon">O</span><span>Dollar Control</span></button>
         </div>
       </nav>
 
@@ -125,12 +57,15 @@
         <div class="topbar-left">
           <button class="mobile-menu" type="button" data-sidebar-open aria-label="Open menu">Menu</button>
           <div>
-            <div class="breadcrumb">Control Center <span>/</span> <span id="page-breadcrumb">Overview</span></div>
-            <h1 id="page-title">Operations overview</h1>
+            <div class="breadcrumb">Dollar <span>/</span> <span id="page-breadcrumb">Access</span></div>
+            <h1 id="page-title">Access</h1>
           </div>
         </div>
         <div class="topbar-actions">
-          <span class="sync-status"><span class="pulse-dot"></span><span id="sync-label">Live data</span></span>
+          <button class="notification-button" type="button" id="notification-button" aria-label="Open access notifications">
+            <span class="notification-icon">Bell</span><span class="notification-count" id="notification-count" hidden>0</span>
+          </button>
+          <span class="sync-status"><span class="pulse-dot"></span><span id="sync-label">Live</span></span>
           <button class="button button-secondary" type="button" id="refresh-button">Refresh</button>
         </div>
       </header>
@@ -148,19 +83,7 @@
     </main>
   </div>
 
-  <dialog class="detail-dialog" id="detail-dialog">
-    <div class="dialog-header">
-      <div>
-        <span class="eyebrow">Domain record</span>
-        <h2 id="detail-title">Activity details</h2>
-      </div>
-      <button type="button" class="dialog-close" data-dialog-close aria-label="Close details">Close</button>
-    </div>
-    <div id="detail-content"></div>
-  </dialog>
-
-  <dialog class="detail-dialog management-dialog" id="device-dialog"></dialog>
-  <dialog class="detail-dialog management-dialog" id="subadmin-dialog"></dialog>
+  <dialog class="detail-dialog side-drawer" id="detail-dialog"></dialog>
 
   <template id="error-template">
     <div class="empty-state">

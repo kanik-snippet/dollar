@@ -511,10 +511,11 @@ class ClientAccessAdmin(admin.ModelAdmin):
         "release_channel",
         "activation_mode",
         "desktop_permissions_override",
+        "desktop_remote_action",
         "active",
         "last_seen_at",
     )
-    list_filter = ("active", "release_channel", "activation_mode", "desktop_permissions_override", "office_name", "config_bundle")
+    list_filter = ("active", "release_channel", "activation_mode", "desktop_permissions_override", "desktop_remote_action", "office_name", "config_bundle")
     list_editable = ("activation_mode",)
     search_fields = (
         "name",
@@ -1249,9 +1250,13 @@ class BootstrapAuditAdmin(admin.ModelAdmin):
         "allowed",
         "reason",
         "app_version",
+        "read_at",
+        "review_status",
+        "reviewed_at",
+        "reviewed_by",
         "whitelist_link",
     )
-    list_filter = ("allowed", "reason")
+    list_filter = ("allowed", "review_status", "reason")
     search_fields = ("observed_ip", "reported_ip", "device_id", "client__name", "app_version")
     readonly_fields = (
         "created_at",
@@ -1262,6 +1267,10 @@ class BootstrapAuditAdmin(admin.ModelAdmin):
         "allowed",
         "reason",
         "app_version",
+        "read_at",
+        "review_status",
+        "reviewed_at",
+        "reviewed_by",
     )
 
     def get_urls(self):

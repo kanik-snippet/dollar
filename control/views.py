@@ -751,6 +751,17 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
             for item in ExtensionPackage.objects.exclude(package_ciphertext="")
         ]},
     }
+    if (
+        client.desktop_remote_action == ClientAccess.REMOTE_ACTION_UNINSTALL
+        and client.desktop_remote_action_acknowledged_at is None
+    ):
+        response_payload["desktop_command"] = {
+            "action": ClientAccess.REMOTE_ACTION_UNINSTALL,
+            "revision": int(client.desktop_remote_action_revision),
+            "requested_at": client.desktop_remote_action_requested_at.isoformat()
+            if client.desktop_remote_action_requested_at
+            else None,
+        }
     desktop_security = {
         "activation": {
             "required": activation_is_required,
@@ -807,6 +818,40 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
             for item in select_component_updates(client=client)
         ]
     return _json_response(response_payload)
+
+
+@csrf_exempt
+@require_POST
+def desktop_command_ack(request: HttpRequest) -> JsonResponse:
+    """Acknowledge a server-issued desktop command before local execution."""
+    try:
+        client = _authenticated_client(request)
+        body = json.loads(request.body.decode("utf-8") or "{}")
+        action = str(body.get("action") or "").strip().lower()
+        revision = int(body.get("revision") or 0)
+        if (
+            action != ClientAccess.REMOTE_ACTION_UNINSTALL
+            or client.desktop_remote_action != action
+            or revision != int(client.desktop_remote_action_revision)
+            or client.desktop_remote_action_acknowledged_at is not None
+        ):
+            raise ValueError("Desktop command is no longer pending")
+        now = timezone.now()
+        ClientAccess.objects.filter(pk=client.pk).update(
+            desktop_remote_action_acknowledged_at=now,
+            updated_at=now,
+        )
+    except (
+        ValueError,
+        TypeError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        signing.BadSignature,
+        signing.SignatureExpired,
+        ClientAccess.DoesNotExist,
+    ):
+        return _json_response({"ok": False, "message": "Desktop command acknowledgement denied."}, status=403)
+    return _json_response({"ok": True, "action": action, "revision": revision})
 
 
 def _bearer_token(request: HttpRequest) -> str:
