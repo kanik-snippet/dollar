@@ -98,6 +98,14 @@ class ConfigBundle(models.Model):
 
 
 class ClientAccess(models.Model):
+    DESKTOP_PRODUCT_UNKNOWN = ""
+    DESKTOP_PRODUCT_LEGACY = "legacy"
+    DESKTOP_PRODUCT_DOLLAR = "dollar"
+    DESKTOP_PRODUCT_CHOICES = (
+        (DESKTOP_PRODUCT_UNKNOWN, "Not detected"),
+        (DESKTOP_PRODUCT_LEGACY, "I am the best"),
+        (DESKTOP_PRODUCT_DOLLAR, "Dollar"),
+    )
     RELEASE_CHANNEL_PUBLIC = "public"
     RELEASE_CHANNEL_TESTING = "testing"
     RELEASE_CHANNEL_CHOICES = (
@@ -179,6 +187,16 @@ class ClientAccess(models.Model):
         default=False,
         help_text="Show the Logs tab on this PC when the per-PC override is enabled.",
     )
+    desktop_client_product = models.CharField(
+        max_length=16,
+        choices=DESKTOP_PRODUCT_CHOICES,
+        blank=True,
+        default=DESKTOP_PRODUCT_UNKNOWN,
+        help_text="Last desktop product positively identified during bootstrap.",
+    )
+    desktop_client_version = models.CharField(max_length=40, blank=True, default="")
+    desktop_client_detected_at = models.DateTimeField(blank=True, null=True)
+    desktop_activation_revision = models.PositiveBigIntegerField(default=0)
     desktop_remote_action = models.CharField(
         max_length=24,
         choices=REMOTE_ACTION_CHOICES,

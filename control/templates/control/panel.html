@@ -13,7 +13,8 @@
   <div class="app-shell" id="panel-app"
        data-access-url="{% url 'control:panel-access-api' %}"
        data-proxy-url="{% url 'control:panel-proxy-api' %}"
-       data-optix-url="{% url 'control:panel-optix-api' %}">
+       data-optix-url="{% url 'control:panel-optix-api' %}"
+       data-releases-url="{% url 'control:panel-releases-api' %}">
     <aside class="sidebar" aria-label="Primary navigation">
       <div class="brand">
         <div class="brand-mark">$</div>
@@ -33,6 +34,7 @@
           <button class="nav-item is-active" data-route="access"><span class="nav-icon">A</span><span>Access</span></button>
           <button class="nav-item" data-route="proxy"><span class="nav-icon">P</span><span>Proxy</span></button>
           <button class="nav-item" data-route="optix"><span class="nav-icon">O</span><span>Dollar Control</span></button>
+          <button class="nav-item" data-route="releases"><span class="nav-icon">R</span><span>Dollar Releases</span></button>
         </div>
       </nav>
 
@@ -43,10 +45,10 @@
           <span>Administrator</span>
         </div>
         <div class="user-actions">
-          <a href="{{ admin_url }}" title="Open Django admin">Admin</a>
+          <a class="footer-action" href="{{ admin_url }}" title="Open Django admin">Admin</a>
           <form method="post" action="{{ logout_url }}">
             {% csrf_token %}
-            <button type="submit">Sign out</button>
+            <button class="footer-action logout-action" type="submit" title="Sign out" aria-label="Sign out"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M14 8l4 4-4 4M8 12h10"/></svg></button>
           </form>
         </div>
       </div>
@@ -66,7 +68,7 @@
             <span class="notification-icon">Bell</span><span class="notification-count" id="notification-count" hidden>0</span>
           </button>
           <span class="sync-status"><span class="pulse-dot"></span><span id="sync-label">Live</span></span>
-          <button class="button button-secondary" type="button" id="refresh-button">Refresh</button>
+          <button class="button button-secondary refresh-button" type="button" id="refresh-button"><span class="refresh-spinner" aria-hidden="true"></span><span>Refresh</span></button>
         </div>
       </header>
 

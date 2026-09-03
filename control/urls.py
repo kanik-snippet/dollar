@@ -31,6 +31,7 @@ urlpatterns = [
     path("panel/api/access/", panel_operations.panel_access_api, name="panel-access-api"),
     path("panel/api/proxy/", panel_operations.panel_proxy_api, name="panel-proxy-api"),
     path("panel/api/optix/", panel_operations.panel_optix_api, name="panel-optix-api"),
+    path("panel/api/releases/", panel_operations.panel_releases_api, name="panel-releases-api"),
     path("panel/api/subadmins/", panel_views.panel_subadmins_api, name="panel-subadmins-api"),
     path(
         "panel/api/overview/",

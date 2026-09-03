@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
+import secrets
 from collections import defaultdict
 from typing import Any
 
 from django.contrib.admin.views.decorators import staff_member_required
+from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, Prefetch, Q, Sum
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -23,6 +26,9 @@ from .models import (
     DEFAULT_DESKTOP_DEVICE_CODES,
     DEFAULT_DESKTOP_PROVIDER_CODES,
     DesktopOfficeAccessPolicy,
+    DesktopComponentRelease,
+    DesktopRelease,
+    DesktopSecurityConfiguration,
     Provider,
     ProxyCityCatalog,
     ProxyCountryFile,
@@ -408,6 +414,34 @@ def panel_proxy_api(request: HttpRequest) -> JsonResponse:
                         f"for {scope_label}. Reserved history was retained."
                     ),
                 })
+            if action == "resize":
+                queryset = ProxyPoolTarget.objects.filter(config_bundle_id__in=bundle_ids)
+                queryset, provider, country, region, city = _proxy_filters(queryset, body)
+                if not provider or not country:
+                    raise ValueError("Provider and country are required before resizing stock.")
+                target_count = int(body.get("target_count") or 0)
+                threshold = int(body.get("threshold") or 0)
+                if not 1 <= target_count <= 5000 or not 1 <= threshold <= target_count:
+                    raise ValueError("Target must be 1-5000 and refill threshold must not exceed it.")
+                targets = list(queryset)
+                if not targets:
+                    raise ValueError("No matching proxy pools were found for this scope.")
+                deleted = queued = 0
+                with transaction.atomic():
+                    for target in targets:
+                        available = target.entries.filter(state="available")
+                        excess = max(0, available.count() - target_count)
+                        if excess:
+                            remove_ids = list(available.order_by("-created_at", "-pk").values_list("pk", flat=True)[:excess])
+                            removed, _ = ProxyPoolEntry.objects.filter(pk__in=remove_ids).delete()
+                            deleted += removed
+                        target.target_count = target_count
+                        target.replenish_below = threshold
+                        target.active = True
+                        target.save(update_fields=("target_count", "replenish_below", "active", "updated_at"))
+                        if target.entries.filter(state="available").count() < threshold:
+                            queued += int(queue_refill_proxy_pool(target.pk))
+                return panel_json({"ok": True, "message": f"Resized {len(targets)} pool(s) for {scope_label} to {target_count}/{threshold}; removed {deleted} excess available rows and queued {queued} refill(s)."})
             raise ValueError("Unknown Proxy action.")
         except (TypeError, ValueError) as exc:
             return panel_json({"ok": False, "message": str(exc)}, status=400)
@@ -426,16 +460,14 @@ def panel_proxy_api(request: HttpRequest) -> JsonResponse:
         ProxyPoolTarget.objects.filter(config_bundle_id__in=bundle_ids, active=True)
         .values("config_bundle_id", "provider_code")
         .annotate(
-            available=Count("entries", filter=Q(entries__state="available")),
-            reserved=Count("entries", filter=Q(entries__state="reserved")),
             locations=Count("id", distinct=True),
+            target_capacity=Sum("target_count"),
         )
     )
     for row in summary:
         grouped[row["config_bundle_id"]][row["provider_code"]] = {
-            "available": row["available"],
-            "reserved": row["reserved"],
             "locations": row["locations"],
+            "target_capacity": row["target_capacity"] or 0,
         }
 
     selected = None
@@ -541,6 +573,32 @@ def _policy_row(policy: DesktopOfficeAccessPolicy | None, office: str) -> dict[s
     }
 
 
+def _permission_source(value: str) -> str:
+    return {"global-default": "Default policy", "office": "Office policy", "device": "PC override"}.get(str(value or ""), "Default policy")
+
+
+def _product_row(client: ClientAccess, latest_version: str = "") -> dict[str, Any]:
+    product = str(client.desktop_client_product or "")
+    version = str(client.desktop_client_version or latest_version or "")
+    evidence = "reported"
+    if not product:
+        parts = [int(value) for value in re.findall(r"\d+", version)[:2]]
+        if parts:
+            product = ClientAccess.DESKTOP_PRODUCT_LEGACY if tuple(parts) >= (1, 7) else ClientAccess.DESKTOP_PRODUCT_DOLLAR
+            evidence = "version history"
+        else:
+            product = ClientAccess.DESKTOP_PRODUCT_UNKNOWN
+            evidence = "none"
+    return {
+        "code": product,
+        "label": {ClientAccess.DESKTOP_PRODUCT_DOLLAR: "Dollar", ClientAccess.DESKTOP_PRODUCT_LEGACY: "I am the best"}.get(product, "Not detected"),
+        "version": version,
+        "evidence": evidence,
+        "activation_revision": int(client.desktop_activation_revision or 0),
+        "activated": bool(client.desktop_activation_revision),
+    }
+
+
 @staff_member_required(login_url="admin:login")
 @require_http_methods(["GET", "POST"])
 def panel_optix_api(request: HttpRequest) -> JsonResponse:
@@ -563,8 +621,37 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
                 policy.allowed_browser_codes = _clean_codes(body.get("browsers"), set(browser_options), upper=True)
                 policy.allowed_device_codes = _clean_codes(body.get("devices"), set(device_options), upper=False)
                 policy.show_logs = bool(body.get("show_logs"))
-                policy.save()
-                return panel_json({"ok": True, "message": f"Dollar defaults saved for {office}."})
+                release_channel = str(body.get("release_channel") or "").strip().lower()
+                activation_mode = str(body.get("activation_mode") or "").strip().lower()
+                if release_channel not in dict(ClientAccess.RELEASE_CHANNEL_CHOICES):
+                    raise ValueError("Choose Public or Testing release channel.")
+                if activation_mode not in dict(ClientAccess.ACTIVATION_MODE_CHOICES):
+                    raise ValueError("Choose a valid activation rule.")
+                with transaction.atomic():
+                    policy.save()
+                    changed = ClientAccess.objects.filter(office_name__iexact=office).update(release_channel=release_channel, activation_mode=activation_mode)
+                return panel_json({"ok": True, "message": f"Dollar defaults and release assignment saved for {changed} PC(s) in {office}."})
+
+            if action in {"save_activation_security", "rotate_activation_key"}:
+                if not request.user.is_superuser:
+                    raise ValueError("Only a superuser can change activation security.")
+                security, _ = DesktopSecurityConfiguration.objects.get_or_create(pk=1)
+                required = bool(body.get("required"))
+                if action == "save_activation_security":
+                    if required and not security.activation_key_hash:
+                        raise ValueError("Generate the first activation key before requiring activation.")
+                    if security.activation_required != required:
+                        security.activation_revision = max(1, int(security.activation_revision or 0) + 1)
+                    security.activation_required = required
+                    security.updated_by = request.user
+                    security.save()
+                    return panel_json({"ok": True, "message": "Global Dollar activation rule updated."})
+                new_key = f"DOLLAR-ACT-{secrets.token_urlsafe(32)}"
+                security.set_activation_key(new_key)
+                security.activation_required = required
+                security.updated_by = request.user
+                security.save()
+                return panel_json({"ok": True, "message": "Old activation key revoked. Copy the new key now.", "activation_key": new_key, "activation_revision": int(security.activation_revision)})
 
             client = get_object_or_404(ClientAccess, pk=body.get("client_id"))
             if action == "save_device":
@@ -574,9 +661,18 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
                 client.allowed_browser_codes = _clean_codes(body.get("browsers"), set(browser_options), upper=True)
                 client.allowed_device_codes = _clean_codes(body.get("devices"), set(device_options), upper=False)
                 client.show_logs_override = bool(body.get("show_logs"))
+                release_channel = str(body.get("release_channel") or "").strip().lower()
+                activation_mode = str(body.get("activation_mode") or "").strip().lower()
+                if release_channel not in dict(ClientAccess.RELEASE_CHANNEL_CHOICES):
+                    raise ValueError("Choose Public or Testing release channel.")
+                if activation_mode not in dict(ClientAccess.ACTIVATION_MODE_CHOICES):
+                    raise ValueError("Choose a valid activation rule.")
+                client.release_channel = release_channel
+                client.activation_mode = activation_mode
                 client.save(update_fields=(
                     "active", "desktop_permissions_override", "allowed_provider_codes",
                     "allowed_browser_codes", "allowed_device_codes", "show_logs_override",
+                    "release_channel", "activation_mode",
                     "updated_at",
                 ))
                 return panel_json({"ok": True, "message": f"Dollar access saved for {client.name}."})
@@ -622,6 +718,10 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
         .filter(office_name__iexact=office)
         .order_by("system_number", "name", "pk")
     ) if office else []
+    latest_versions: dict[int, str] = {}
+    if clients:
+        for audit in BootstrapAudit.objects.filter(client_id__in=[row.pk for row in clients]).exclude(app_version="").order_by("client_id", "-id").only("client_id", "app_version"):
+            latest_versions.setdefault(int(audit.client_id), audit.app_version)
     policy = DesktopOfficeAccessPolicy.objects.filter(office_name__iexact=office).first() if office else None
     selected = next((row for row in clients if str(row.pk) == client_id), None)
     selected_row = None
@@ -634,17 +734,24 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
             "browsers": list(selected.allowed_browser_codes),
             "devices": list(selected.allowed_device_codes),
             "show_logs": selected.show_logs_override,
+            "release_channel": selected.release_channel,
+            "activation_mode": selected.activation_mode,
+            "product": _product_row(selected, latest_versions.get(selected.pk, "")),
             "resolved": resolved,
             "remote_action": selected.desktop_remote_action,
             "remote_action_revision": selected.desktop_remote_action_revision,
             "remote_action_requested_at": iso(selected.desktop_remote_action_requested_at),
             "remote_action_acknowledged_at": iso(selected.desktop_remote_action_acknowledged_at),
         }
+    release_channels = {row.release_channel for row in clients}
+    activation_modes = {row.activation_mode for row in clients}
+    security = DesktopSecurityConfiguration.objects.filter(pk=1).first()
     return panel_json({
         "ok": True,
         "offices": offices,
         "office": office,
-        "policy": _policy_row(policy, office),
+        "policy": {**_policy_row(policy, office), "release_channel": next(iter(release_channels)) if len(release_channels) == 1 else "mixed", "activation_mode": next(iter(activation_modes)) if len(activation_modes) == 1 else "mixed"},
+        "security": {"required": bool(security.activation_required) if security else False, "configured": bool(security.activation_key_hash) if security else False, "revision": int(security.activation_revision) if security else 0, "hint": security.activation_key_hint if security else ""},
         "rows": [
             {
                 "id": row.pk,
@@ -652,7 +759,10 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
                 "name": row.name,
                 "bundle": row.config_bundle.name,
                 "active": row.active,
-                "permission_source": DesktopOfficeAccessPolicy.resolve_for(row)["source"],
+                "permission_source": _permission_source(DesktopOfficeAccessPolicy.resolve_for(row)["source"]),
+                "release_channel": row.release_channel,
+                "activation_mode": row.activation_mode,
+                "product": _product_row(row, latest_versions.get(row.pk, "")),
                 "remote_action": row.desktop_remote_action,
                 "remote_acknowledged": row.desktop_remote_action_acknowledged_at is not None,
                 "last_seen": iso(row.last_seen_at),
@@ -664,6 +774,65 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
             "providers": provider_options,
             "browsers": browser_options,
             "devices": device_options,
+            "release_channels": [value for value, _label in ClientAccess.RELEASE_CHANNEL_CHOICES],
+            "activation_modes": [value for value, _label in ClientAccess.ACTIVATION_MODE_CHOICES],
         },
     })
 
+
+def _release_row(item: DesktopRelease | DesktopComponentRelease, kind: str) -> dict[str, Any]:
+    return {
+        "id": item.pk, "kind": kind,
+        "component": "application" if kind == "application" else item.component,
+        "slot": "installer" if kind == "application" else item.slot,
+        "version": item.version, "build_number": int(item.build_number),
+        "channel": item.channel, "status": item.status,
+        "activation": item.mode if kind == "application" else item.activation,
+        "target_offices": list(item.target_offices or []),
+        "target_device_ids": list(item.target_device_ids or []),
+        "filename": item.original_filename, "size": int(item.artifact_size or 0),
+        "created_at": iso(item.created_at), "published_at": iso(item.published_at),
+    }
+
+
+@staff_member_required(login_url="admin:login")
+@require_http_methods(["GET", "POST"])
+def panel_releases_api(request: HttpRequest) -> JsonResponse:
+    if request.method == "POST":
+        if not request.user.is_superuser:
+            return panel_json({"ok": False, "message": "Super-admin access is required."}, status=403)
+        try:
+            body = _body(request); action = str(body.get("action") or "").strip().lower(); kind = str(body.get("kind") or "component").strip().lower()
+            model = DesktopRelease if kind == "application" else DesktopComponentRelease
+            with transaction.atomic():
+                item = model.objects.select_for_update().get(pk=body.get("release_id"))
+                if action == "publish":
+                    if item.status != item.STATUS_DRAFT: raise ValueError("Only an uploaded Draft can be rolled out.")
+                    channel = str(body.get("channel") or "").strip().lower()
+                    if channel not in dict(item.CHANNEL_CHOICES): raise ValueError("Choose Public or Testing channel.")
+                    scope = str(body.get("scope") or "all").strip().lower(); target_offices=[]; target_devices=[]
+                    if scope == "office":
+                        office = _selected_office(body.get("office"), _visible_offices())
+                        if not office: raise ValueError("Choose an office for this rollout.")
+                        target_offices=[office]
+                    elif scope == "device":
+                        client = get_object_or_404(ClientAccess, pk=body.get("client_id"))
+                        if not client.device_id: raise ValueError("This PC has not reported a Device ID yet.")
+                        target_devices=[client.device_id]
+                    elif scope != "all": raise ValueError("Choose all PCs, one office or one PC.")
+                    item.channel=channel; item.target_offices=target_offices; item.target_device_ids=target_devices; item.status=item.STATUS_PUBLISHED; item.published_at=timezone.now(); item.save()
+                    return panel_json({"ok": True, "message": f"{item.version} rollout is live on {channel}."})
+                if action == "revoke":
+                    if item.status != item.STATUS_PUBLISHED: raise ValueError("Only a live rollout can be revoked.")
+                    item.status=item.STATUS_REVOKED; item.save(update_fields=("status", "updated_at"))
+                    return panel_json({"ok": True, "message": f"{item.version} rollout revoked."})
+                raise ValueError("Unknown release action.")
+        except model.DoesNotExist:
+            return panel_json({"ok": False, "message": "Release not found."}, status=404)
+        except (ValidationError, ValueError) as exc:
+            return panel_json({"ok": False, "message": str(exc)}, status=400)
+    office = _selected_office(request.GET.get("office"), _visible_offices())
+    clients = list(ClientAccess.objects.filter(office_name__iexact=office).order_by("system_number", "name", "pk").values("id", "system_number", "name", "device_id")) if office else []
+    rows = [*[_release_row(item, "application") for item in DesktopRelease.objects.all()[:60]], *[_release_row(item, "component") for item in DesktopComponentRelease.objects.all()[:120]]]
+    rows.sort(key=lambda row: (row["created_at"] or "", row["build_number"]), reverse=True)
+    return panel_json({"ok": True, "offices": _visible_offices(), "office": office, "clients": clients, "rows": rows[:120], "waiting_count": sum(1 for row in rows if row["status"] == "draft"), "live_count": sum(1 for row in rows if row["status"] == "published")})

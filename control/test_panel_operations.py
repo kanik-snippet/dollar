@@ -119,6 +119,8 @@ class OperationsPanelTests(TestCase):
             "browsers": ["B1"],
             "devices": ["desktop"],
             "show_logs": False,
+            "release_channel": "testing",
+            "activation_mode": "inherit",
         })
         self.assertEqual(response.status_code, 200)
         policy = DesktopOfficeAccessPolicy.objects.get(office_name="IPLV")
@@ -136,12 +138,12 @@ class OperationsPanelTests(TestCase):
         self.assertEqual(self.device.desktop_remote_action_requested_by, self.user)
         self.assertIsNone(self.device.desktop_remote_action_acknowledged_at)
 
-    def test_panel_navigation_is_only_access_proxy_and_optix(self):
+    def test_panel_navigation_has_focused_operations_and_releases(self):
         response = self.client.get(reverse("control:panel"))
         self.assertContains(response, 'data-route="access"')
         self.assertContains(response, 'data-route="proxy"')
         self.assertContains(response, 'data-route="optix"')
+        self.assertContains(response, 'data-route="releases"')
         self.assertNotContains(response, 'data-route="overview"')
         self.assertNotContains(response, "Domain activity")
-
 

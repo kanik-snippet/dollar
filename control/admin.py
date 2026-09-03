@@ -510,12 +510,14 @@ class ClientAccessAdmin(admin.ModelAdmin):
         "config_bundle",
         "release_channel",
         "activation_mode",
+        "desktop_client_product",
+        "desktop_client_version",
         "desktop_permissions_override",
         "desktop_remote_action",
         "active",
         "last_seen_at",
     )
-    list_filter = ("active", "release_channel", "activation_mode", "desktop_permissions_override", "desktop_remote_action", "office_name", "config_bundle")
+    list_filter = ("active", "release_channel", "activation_mode", "desktop_client_product", "desktop_permissions_override", "desktop_remote_action", "office_name", "config_bundle")
     list_editable = ("activation_mode",)
     search_fields = (
         "name",
