@@ -8,9 +8,10 @@ from collections import defaultdict
 from typing import Any
 
 from django.contrib.admin.views.decorators import staff_member_required
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models import Count, OuterRef, Prefetch, Q, Subquery, Sum
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -47,6 +48,21 @@ ACCESS_NOTIFICATION_REASONS = {
     "ip-mismatch",
     "inactive",
 }
+
+
+def _proxy_cache_revision() -> int:
+    try:
+        return int(cache.get("panel-proxy-summary-revision", 1) or 1)
+    except Exception:
+        return 1
+
+
+def _invalidate_proxy_summary() -> None:
+    try:
+        if not cache.add("panel-proxy-summary-revision", 2, timeout=None):
+            cache.incr("panel-proxy-summary-revision")
+    except Exception:
+        pass
 
 
 def _body(request: HttpRequest) -> dict[str, Any]:
@@ -383,6 +399,7 @@ def panel_proxy_api(request: HttpRequest) -> JsonResponse:
                     )
                     created += int(was_created)
                     queued += int(queue_refill_proxy_pool(target.pk))
+                _invalidate_proxy_summary()
                 return panel_json({
                     "ok": True,
                     "message": (
@@ -407,6 +424,7 @@ def panel_proxy_api(request: HttpRequest) -> JsonResponse:
                         target.active = False
                         target.refill_pending = False
                         target.save(update_fields=("active", "refill_pending", "updated_at"))
+                _invalidate_proxy_summary()
                 return panel_json({
                     "ok": True,
                     "message": (
@@ -441,6 +459,7 @@ def panel_proxy_api(request: HttpRequest) -> JsonResponse:
                         target.save(update_fields=("target_count", "replenish_below", "active", "updated_at"))
                         if target.entries.filter(state="available").count() < threshold:
                             queued += int(queue_refill_proxy_pool(target.pk))
+                _invalidate_proxy_summary()
                 return panel_json({"ok": True, "message": f"Resized {len(targets)} pool(s) for {scope_label} to {target_count}/{threshold}; removed {deleted} excess available rows and queued {queued} refill(s)."})
             raise ValueError("Unknown Proxy action.")
         except (TypeError, ValueError) as exc:
@@ -456,19 +475,25 @@ def panel_proxy_api(request: HttpRequest) -> JsonResponse:
     ) if office else []
     bundle_ids = {row.config_bundle_id for row in clients}
     grouped: dict[int, dict[str, dict[str, int]]] = defaultdict(dict)
-    summary = (
-        ProxyPoolTarget.objects.filter(config_bundle_id__in=bundle_ids, active=True)
-        .values("config_bundle_id", "provider_code")
-        .annotate(
-            locations=Count("id", distinct=True),
-            target_capacity=Sum("target_count"),
+    cache_key = f"panel-proxy-summary:{_proxy_cache_revision()}:{str(office).casefold()}"
+    try:
+        cached_grouped = cache.get(cache_key)
+    except Exception:
+        cached_grouped = None
+    if isinstance(cached_grouped, dict):
+        grouped.update({int(key): value for key, value in cached_grouped.items()})
+    else:
+        summary = (
+            ProxyPoolTarget.objects.filter(config_bundle_id__in=bundle_ids, active=True)
+            .values("config_bundle_id", "provider_code")
+            .annotate(locations=Count("id"), target_capacity=Sum("target_count"))
         )
-    )
-    for row in summary:
-        grouped[row["config_bundle_id"]][row["provider_code"]] = {
-            "locations": row["locations"],
-            "target_capacity": row["target_capacity"] or 0,
-        }
+        for row in summary:
+            grouped[row["config_bundle_id"]][row["provider_code"]] = {"locations": row["locations"], "target_capacity": row["target_capacity"] or 0}
+        try:
+            cache.set(cache_key, dict(grouped), timeout=90)
+        except Exception:
+            pass
 
     selected = None
     detail_rows = []
@@ -713,15 +738,18 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
     offices = _visible_offices()
     office = _selected_office(request.GET.get("office"), offices)
     client_id = str(request.GET.get("client_id") or "").strip()
+    latest_app_version = (
+        BootstrapAudit.objects.filter(client_id=OuterRef("pk"))
+        .exclude(app_version="")
+        .order_by("-id")
+        .values("app_version")[:1]
+    )
     clients = list(
         ClientAccess.objects.select_related("config_bundle")
         .filter(office_name__iexact=office)
+        .annotate(panel_latest_app_version=Subquery(latest_app_version))
         .order_by("system_number", "name", "pk")
     ) if office else []
-    latest_versions: dict[int, str] = {}
-    if clients:
-        for audit in BootstrapAudit.objects.filter(client_id__in=[row.pk for row in clients]).exclude(app_version="").order_by("client_id", "-id").only("client_id", "app_version"):
-            latest_versions.setdefault(int(audit.client_id), audit.app_version)
     policy = DesktopOfficeAccessPolicy.objects.filter(office_name__iexact=office).first() if office else None
     selected = next((row for row in clients if str(row.pk) == client_id), None)
     selected_row = None
@@ -736,7 +764,7 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
             "show_logs": selected.show_logs_override,
             "release_channel": selected.release_channel,
             "activation_mode": selected.activation_mode,
-            "product": _product_row(selected, latest_versions.get(selected.pk, "")),
+            "product": _product_row(selected, selected.panel_latest_app_version or ""),
             "resolved": resolved,
             "remote_action": selected.desktop_remote_action,
             "remote_action_revision": selected.desktop_remote_action_revision,
@@ -762,7 +790,7 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
                 "permission_source": _permission_source(DesktopOfficeAccessPolicy.resolve_for(row)["source"]),
                 "release_channel": row.release_channel,
                 "activation_mode": row.activation_mode,
-                "product": _product_row(row, latest_versions.get(row.pk, "")),
+                "product": _product_row(row, row.panel_latest_app_version or ""),
                 "remote_action": row.desktop_remote_action,
                 "remote_acknowledged": row.desktop_remote_action_acknowledged_at is not None,
                 "last_seen": iso(row.last_seen_at),
