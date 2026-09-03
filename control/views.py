@@ -1409,6 +1409,15 @@ def create_proxy_job(request: HttpRequest) -> JsonResponse:
         provider_code = str(body.get("provider") or "").strip().upper()
         if not _provider_is_allowed(client, provider_code):
             raise ValueError("Provider access denied")
+        if str(body.get("operation") or "").strip().lower() == "profile-create":
+            permissions = _desktop_permissions(client)
+            browser_code = str(body.get("browser") or "").strip().upper()
+            device_code = str(body.get("device") or "").strip().lower()
+            if (
+                browser_code not in set(permissions["browsers"])
+                or device_code not in set(permissions["devices"])
+            ):
+                raise ValueError("Browser or device access denied")
         if warrior_proxy_enabled():
             return warrior_proxy_relay(client, "create", request=body)
         raw_country = str(body.get("country") or "").strip()
