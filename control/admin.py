@@ -21,7 +21,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import (BootstrapAudit, ClientAccess, ConfigBundle, DesktopComponentRelease, DesktopRelease, DesktopRuntimeConfiguration, DesktopSecurityConfiguration, ExtensionPackage, MonitoredDomain, Provider, ProxyCountryFile, ProxyGenerationJob, ProxyInventoryAlert, OfficeAuditRequest, ProxyReservation, ProxyExitIPCooldown, ProfileActivity, OfficeProfileAudit, ProfileDomainActivity, OfficeAuditDomain, BrowserGroupMapping, ProxyPoolTarget, ProxyPoolEntry, ProxyRegionCatalog, ProxyCityCatalog, SubAdminAccount, SubAdminDomainExclusion, SubAdminScopeExclusion, ClientAccessIP, YSBridgeAgent, YSBridgeCommand)
+from .models import (BootstrapAudit, ClientAccess, ConfigBundle, DesktopComponentRelease, DesktopOfficeAccessPolicy, DesktopRelease, DesktopRuntimeConfiguration, DesktopSecurityConfiguration, ExtensionPackage, MonitoredDomain, Provider, ProxyCountryFile, ProxyGenerationJob, ProxyInventoryAlert, OfficeAuditRequest, ProxyReservation, ProxyExitIPCooldown, ProfileActivity, OfficeProfileAudit, ProfileDomainActivity, OfficeAuditDomain, BrowserGroupMapping, ProxyPoolTarget, ProxyPoolEntry, ProxyRegionCatalog, ProxyCityCatalog, SubAdminAccount, SubAdminDomainExclusion, SubAdminScopeExclusion, ClientAccessIP, YSBridgeAgent, YSBridgeCommand)
 from .release_updates import canonical_component_payload, canonical_release_payload
 from .tasks import queue_refill_proxy_pool
 
@@ -432,6 +432,65 @@ class ClientAccessIPInline(admin.TabularInline):
     readonly_fields = ("created_at",)
 
 
+PROVIDER_ACCESS_CHOICES = (
+    ("P1", "P1"), ("P2", "P2"), ("P3", "P3"), ("P4", "P4"),
+)
+BROWSER_ACCESS_CHOICES = (
+    ("B1", "B1 — Electron browser"), ("B2", "B2 — Octo one-time"),
+)
+DEVICE_ACCESS_CHOICES = (
+    ("desktop", "Desktop"), ("mobile", "Mobile"),
+)
+
+
+def provider_access_field():
+    return forms.MultipleChoiceField(
+        required=False,
+        choices=PROVIDER_ACCESS_CHOICES,
+        widget=forms.CheckboxSelectMultiple,
+        label="Allowed providers",
+    )
+
+
+def browser_access_field():
+    return forms.MultipleChoiceField(
+        required=False,
+        choices=BROWSER_ACCESS_CHOICES,
+        widget=forms.CheckboxSelectMultiple,
+        label="Allowed browsers",
+    )
+
+
+def device_access_field():
+    return forms.MultipleChoiceField(
+        required=False,
+        choices=DEVICE_ACCESS_CHOICES,
+        widget=forms.CheckboxSelectMultiple,
+        label="Allowed profile devices",
+    )
+
+
+class ClientAccessAdminForm(forms.ModelForm):
+    allowed_provider_codes = provider_access_field()
+    allowed_browser_codes = browser_access_field()
+    allowed_device_codes = device_access_field()
+
+    class Meta:
+        model = ClientAccess
+        fields = "__all__"
+
+
+class DesktopOfficeAccessPolicyAdminForm(forms.ModelForm):
+    allowed_provider_codes = provider_access_field()
+    allowed_browser_codes = browser_access_field()
+    allowed_device_codes = device_access_field()
+
+    class Meta:
+        model = DesktopOfficeAccessPolicy
+        fields = "__all__"
+
+
+
 @admin.register(ClientAccessIP)
 class ClientAccessIPAdmin(admin.ModelAdmin):
     list_display = ("client", "ipv4", "active", "created_at")
@@ -440,6 +499,7 @@ class ClientAccessIPAdmin(admin.ModelAdmin):
 
 @admin.register(ClientAccess)
 class ClientAccessAdmin(admin.ModelAdmin):
+    form = ClientAccessAdminForm
     list_display = (
         "name",
         "ipv4",
@@ -450,10 +510,11 @@ class ClientAccessAdmin(admin.ModelAdmin):
         "config_bundle",
         "release_channel",
         "activation_mode",
+        "desktop_permissions_override",
         "active",
         "last_seen_at",
     )
-    list_filter = ("active", "release_channel", "activation_mode", "office_name", "config_bundle")
+    list_filter = ("active", "release_channel", "activation_mode", "desktop_permissions_override", "office_name", "config_bundle")
     list_editable = ("activation_mode",)
     search_fields = (
         "name",
@@ -464,6 +525,29 @@ class ClientAccessAdmin(admin.ModelAdmin):
         "profile_name",
     )
     inlines = (ClientAccessIPInline,)
+
+
+@admin.register(DesktopOfficeAccessPolicy)
+class DesktopOfficeAccessPolicyAdmin(admin.ModelAdmin):
+    form = DesktopOfficeAccessPolicyAdminForm
+    list_display = (
+        "office_name", "provider_summary", "browser_summary", "device_summary",
+        "show_logs", "active", "updated_at",
+    )
+    list_filter = ("active", "show_logs")
+    search_fields = ("office_name", "notes")
+
+    @admin.display(description="Providers")
+    def provider_summary(self, obj):
+        return ", ".join(obj.allowed_provider_codes or []) or "None"
+
+    @admin.display(description="Browsers")
+    def browser_summary(self, obj):
+        return ", ".join(obj.allowed_browser_codes or []) or "None"
+
+    @admin.display(description="Devices")
+    def device_summary(self, obj):
+        return ", ".join(obj.allowed_device_codes or []) or "None"
 
 
 @admin.register(Provider)

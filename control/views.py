@@ -27,7 +27,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from .models import (
-    BootstrapAudit, ClientAccess, DesktopComponentRelease, DesktopRelease, DesktopRuntimeConfiguration, DesktopSecurityConfiguration, ExtensionPackage, ProfileActivity, ProfileDomainActivity, Provider, ProxyCountryFile,
+    BootstrapAudit, ClientAccess, DesktopComponentRelease, DesktopOfficeAccessPolicy, DesktopRelease, DesktopRuntimeConfiguration, DesktopSecurityConfiguration, ExtensionPackage, ProfileActivity, ProfileDomainActivity, Provider, ProxyCountryFile,
     ProfileCreateLease, ProfileCreateQueue, ProxyCityCatalog, ProxyGenerationJob,
     ProxyPoolEntry, ProxyPoolTarget, ProxyReservation, ProxyRegionCatalog,
 )
@@ -77,6 +77,93 @@ P3_PREFILL_GEO_PATH = (
     Path(__file__).resolve().parent / "data" / "p3_prefill_geo.json"
 )
 EXACT_CITY_CANDIDATE_LIMIT = 40
+
+
+def _desktop_permissions(client: ClientAccess) -> dict[str, Any]:
+    return DesktopOfficeAccessPolicy.resolve_for(client)
+
+
+def _provider_is_allowed(client: ClientAccess, provider_code: str) -> bool:
+    code = str(provider_code or "").strip().upper()
+    return bool(code and code in set(_desktop_permissions(client)["providers"]))
+
+
+def _filter_desktop_providers(
+    rows: list[dict[str, Any]],
+    permissions: dict[str, Any],
+) -> list[dict[str, Any]]:
+    allowed = set(permissions["providers"])
+    return [
+        row for row in rows
+        if str(row.get("id") or row.get("code") or "").strip().upper() in allowed
+    ]
+
+
+def _desktop_runtime_values(
+    configured: dict[str, Any],
+    permissions: dict[str, Any],
+    provider_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    values = dict(configured or {})
+
+    def options(
+        key: str,
+        allowed: list[str],
+        fallback_names: dict[str, str],
+        *,
+        upper: bool,
+    ) -> list[dict[str, Any]]:
+        configured_rows = values.get(key)
+        configured_rows = configured_rows if isinstance(configured_rows, list) else []
+        known: dict[str, dict[str, Any]] = {}
+        for row in configured_rows:
+            if not isinstance(row, dict):
+                continue
+            raw_id = str(row.get("id") or "").strip()
+            normalized = raw_id.upper() if upper else raw_id.lower()
+            if normalized:
+                known[normalized] = dict(row)
+        result = []
+        for index, raw_id in enumerate(allowed):
+            normalized = raw_id.upper() if upper else raw_id.lower()
+            row = known.get(normalized, {
+                "id": normalized,
+                "name": fallback_names.get(normalized, normalized),
+            })
+            row["id"] = normalized
+            row["enabled"] = True
+            row["order"] = index + 1
+            result.append(row)
+        return result
+
+    provider_names = {
+        str(row.get("id") or row.get("code") or "").strip().upper():
+        str(row.get("name") or row.get("label") or row.get("id") or row.get("code") or "")
+        for row in provider_rows
+    }
+    values["providers"] = options(
+        "providers", permissions["providers"], provider_names, upper=True
+    )
+    values["browsers"] = options(
+        "browsers",
+        permissions["browsers"],
+        {"B1": "B1", "B2": "B2 — Octo One-Time"},
+        upper=True,
+    )
+    values["devices"] = options(
+        "devices",
+        permissions["devices"],
+        {"desktop": "Desktop", "mobile": "Mobile"},
+        upper=False,
+    )
+    features = dict(values.get("features") or {})
+    features["showLogs"] = bool(permissions["show_logs"])
+    values["features"] = features
+    values["accessPolicy"] = {
+        "source": permissions["source"],
+        "officeName": permissions["office_name"],
+    }
+    return values
 
 
 @lru_cache(maxsize=1)
@@ -622,6 +709,18 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
         device_id=device_id,
         client=client,
     )
+    desktop_permissions = _desktop_permissions(client)
+    desktop_provider_rows = _filter_desktop_providers(
+        _desktop_catalog(
+            client,
+            flatten_p3_locations=_legacy_p3_location_catalog(
+                client,
+                app_version,
+                update_protocol,
+            )
+        ),
+        desktop_permissions,
+    )
     response_payload = {
         "allowed": True,
         "schema_version": 1,
@@ -634,14 +733,8 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
             "browser_group_name": group_name,
             "profile_name": profile_name,
         },
-        "catalog": {"providers": _desktop_catalog(
-            client,
-            flatten_p3_locations=_legacy_p3_location_catalog(
-                client,
-                app_version,
-                update_protocol,
-            )
-        ), "extensions": [
+        "desktop_permissions": desktop_permissions,
+        "catalog": {"providers": desktop_provider_rows, "extensions": [
             {"id": item.pk, "name": item.name, "filename": item.filename,
              "version": item.version, "sha256": item.package_sha256,
              "is_top": item.is_top, "status": item.status}
@@ -661,7 +754,11 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
             }
         },
     }
-    if security is not None and security.b1_enabled:
+    if (
+        "B1" in desktop_permissions["browsers"]
+        and security is not None
+        and security.b1_enabled
+    ):
         try:
             b1_key = security.get_b1_key()
         except ValueError:
@@ -676,10 +773,15 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
         channel=client.release_channel,
         active=True,
     ).first()
+    runtime_values = _desktop_runtime_values(
+        runtime_config.ui_config if runtime_config is not None else {},
+        desktop_permissions,
+        desktop_provider_rows,
+    )
     response_payload["desktop_runtime_config"] = {
-        "revision": int(runtime_config.revision),
-        "values": runtime_config.ui_config,
-    } if runtime_config is not None else {"revision": 0, "values": {}}
+        "revision": int(runtime_config.revision) if runtime_config is not None else 0,
+        "values": runtime_values,
+    }
     if update_protocol >= 1:
         # ClientAccess remains authoritative, and a mismatched executable gets
         # no manifest instead of a manifest it would reject for another channel.
@@ -774,6 +876,8 @@ def proxy_file(request: HttpRequest, provider_code: str, country_code: str) -> J
         ).distinct().get()
         if token_payload.get("config_version") != client.config_bundle.version:
             raise signing.BadSignature("Configuration changed")
+        if not _provider_is_allowed(client, provider_code):
+            raise ValueError("Provider access denied")
         row = ProxyCountryFile.objects.select_related("provider").get(
             provider__code=provider_code,
             provider__active=True,
@@ -1292,9 +1396,11 @@ def create_proxy_job(request: HttpRequest) -> JsonResponse:
     try:
         client = _authenticated_client(request)
         body = json.loads(request.body.decode("utf-8"))
+        provider_code = str(body.get("provider") or "").strip().upper()
+        if not _provider_is_allowed(client, provider_code):
+            raise ValueError("Provider access denied")
         if warrior_proxy_enabled():
             return warrior_proxy_relay(client, "create", request=body)
-        provider_code = str(body.get("provider") or "").strip().upper()
         raw_country = str(body.get("country") or "").strip()
         region = str(body.get("region") or "").strip()[:120]
         city = str(body.get("city") or "").strip()[:120]
@@ -1514,6 +1620,8 @@ def proxy_exit_ip_claim(request: HttpRequest) -> JsonResponse:
         provider_code = str(body.get("provider") or "").strip().upper()
         if not re.fullmatch(r"[A-Z0-9_-]{1,32}", provider_code):
             raise ValueError("Invalid provider")
+        if not _provider_is_allowed(client, provider_code):
+            raise ValueError("Provider access denied")
 
         raw_job_id = body.get("job_id")
         raw_reservation_id = body.get("reservation_id")
@@ -1655,6 +1763,8 @@ def proxy_cities(
                 region=str(region_code or ""),
             )
         provider = str(provider_code or "").strip().upper()
+        if not _provider_is_allowed(client, provider):
+            raise ValueError("Provider access denied")
         country, region, _city = _decode_p3_legacy_location(
             provider,
             country_code,

@@ -36,6 +36,21 @@ component_version_validator = RegexValidator(
 
 logger = logging.getLogger("control")
 
+DEFAULT_DESKTOP_PROVIDER_CODES = ["P1", "P2", "P3", "P4"]
+DEFAULT_DESKTOP_BROWSER_CODES = ["B1", "B2"]
+DEFAULT_DESKTOP_DEVICE_CODES = ["desktop", "mobile"]
+
+def default_desktop_provider_codes() -> list[str]:
+    return list(DEFAULT_DESKTOP_PROVIDER_CODES)
+
+
+def default_desktop_browser_codes() -> list[str]:
+    return list(DEFAULT_DESKTOP_BROWSER_CODES)
+
+
+def default_desktop_device_codes() -> list[str]:
+    return list(DEFAULT_DESKTOP_DEVICE_CODES)
+
 
 def desktop_release_artifact_path(instance, filename: str) -> str:
     """Store release binaries outside any predictable/public media path."""
@@ -132,6 +147,32 @@ class ClientAccess(models.Model):
         default=ACTIVATION_INHERIT,
         help_text="Override the global Dollar activation requirement for this individual PC.",
     )
+    desktop_permissions_override = models.BooleanField(
+        default=False,
+        help_text=(
+            "When enabled, this PC uses the provider/browser/device/log permissions "
+            "below instead of its office policy."
+        ),
+    )
+    allowed_provider_codes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Exact providers allowed when the per-PC override is enabled.",
+    )
+    allowed_browser_codes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Exact browser adapters allowed when the per-PC override is enabled.",
+    )
+    allowed_device_codes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Exact profile devices allowed when the per-PC override is enabled.",
+    )
+    show_logs_override = models.BooleanField(
+        default=False,
+        help_text="Show the Logs tab on this PC when the per-PC override is enabled.",
+    )
     notes = models.TextField(blank=True)
     last_seen_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -149,6 +190,86 @@ class ClientAccess(models.Model):
 
     def __str__(self) -> str:
         return f"{self.office_name} / sys_{self.system_number} / {self.ipv4}"
+
+
+class DesktopOfficeAccessPolicy(models.Model):
+    """Office defaults inherited by desktop clients without a per-PC override."""
+
+    office_name = models.CharField(max_length=64, unique=True)
+    active = models.BooleanField(default=True)
+    allowed_provider_codes = models.JSONField(
+        default=default_desktop_provider_codes,
+        blank=True,
+    )
+    allowed_browser_codes = models.JSONField(
+        default=default_desktop_browser_codes,
+        blank=True,
+    )
+    allowed_device_codes = models.JSONField(
+        default=default_desktop_device_codes,
+        blank=True,
+    )
+    show_logs = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("office_name",)
+        verbose_name = "Desktop office access policy"
+        verbose_name_plural = "Desktop office access policies"
+
+    def __str__(self) -> str:
+        return f"{self.office_name} desktop permissions"
+
+    @staticmethod
+    def _codes(value, *, upper: bool) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        result: list[str] = []
+        for raw in value[:100]:
+            code = str(raw or "").strip()
+            code = code.upper() if upper else code.lower()
+            if (
+                code
+                and len(code) <= 32
+                and all(character.isalnum() or character in "_-" for character in code)
+                and code not in result
+            ):
+                result.append(code)
+        return result
+
+    @classmethod
+    def resolve_for(cls, client: "ClientAccess") -> dict[str, Any]:
+        policy = cls.objects.filter(
+            office_name__iexact=str(client.office_name or "").strip(),
+            active=True,
+        ).order_by("pk").first()
+        source = "global-default"
+        providers = list(DEFAULT_DESKTOP_PROVIDER_CODES)
+        browsers = list(DEFAULT_DESKTOP_BROWSER_CODES)
+        devices = list(DEFAULT_DESKTOP_DEVICE_CODES)
+        show_logs = False
+        if policy is not None:
+            source = "office"
+            providers = cls._codes(policy.allowed_provider_codes, upper=True)
+            browsers = cls._codes(policy.allowed_browser_codes, upper=True)
+            devices = cls._codes(policy.allowed_device_codes, upper=False)
+            show_logs = bool(policy.show_logs)
+        if bool(client.desktop_permissions_override):
+            source = "device"
+            providers = cls._codes(client.allowed_provider_codes, upper=True)
+            browsers = cls._codes(client.allowed_browser_codes, upper=True)
+            devices = cls._codes(client.allowed_device_codes, upper=False)
+            show_logs = bool(client.show_logs_override)
+        return {
+            "source": source,
+            "office_name": str(client.office_name or ""),
+            "providers": providers,
+            "browsers": browsers,
+            "devices": devices,
+            "show_logs": show_logs,
+        }
 
 
 class ClientAccessIP(models.Model):
