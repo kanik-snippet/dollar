@@ -11,7 +11,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, OuterRef, Prefetch, Q, Subquery, Sum
+from django.db.models import Count, Prefetch, Q, Sum
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -475,7 +475,8 @@ def panel_proxy_api(request: HttpRequest) -> JsonResponse:
     ) if office else []
     bundle_ids = {row.config_bundle_id for row in clients}
     grouped: dict[int, dict[str, dict[str, int]]] = defaultdict(dict)
-    cache_key = f"panel-proxy-summary:{_proxy_cache_revision()}:{str(office).casefold()}"
+    office_cache_key = re.sub(r"[^a-z0-9_-]+", "-", str(office).casefold()).strip("-")
+    cache_key = f"panel-proxy-summary:{_proxy_cache_revision()}:{office_cache_key}"
     try:
         cached_grouped = cache.get(cache_key)
     except Exception:
@@ -738,16 +739,9 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
     offices = _visible_offices()
     office = _selected_office(request.GET.get("office"), offices)
     client_id = str(request.GET.get("client_id") or "").strip()
-    latest_app_version = (
-        BootstrapAudit.objects.filter(client_id=OuterRef("pk"))
-        .exclude(app_version="")
-        .order_by("-id")
-        .values("app_version")[:1]
-    )
     clients = list(
         ClientAccess.objects.select_related("config_bundle")
         .filter(office_name__iexact=office)
-        .annotate(panel_latest_app_version=Subquery(latest_app_version))
         .order_by("system_number", "name", "pk")
     ) if office else []
     policy = DesktopOfficeAccessPolicy.objects.filter(office_name__iexact=office).first() if office else None
@@ -764,7 +758,7 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
             "show_logs": selected.show_logs_override,
             "release_channel": selected.release_channel,
             "activation_mode": selected.activation_mode,
-            "product": _product_row(selected, selected.panel_latest_app_version or ""),
+            "product": _product_row(selected),
             "resolved": resolved,
             "remote_action": selected.desktop_remote_action,
             "remote_action_revision": selected.desktop_remote_action_revision,
@@ -790,7 +784,7 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
                 "permission_source": _permission_source(DesktopOfficeAccessPolicy.resolve_for(row)["source"]),
                 "release_channel": row.release_channel,
                 "activation_mode": row.activation_mode,
-                "product": _product_row(row, row.panel_latest_app_version or ""),
+                "product": _product_row(row),
                 "remote_action": row.desktop_remote_action,
                 "remote_acknowledged": row.desktop_remote_action_acknowledged_at is not None,
                 "last_seen": iso(row.last_seen_at),
