@@ -1073,10 +1073,10 @@ class DesktopSecurityConfigurationForm(forms.ModelForm):
         self.generated_activation_key = ""
         self.generated_b1_bridge_key = ""
         if self.cleaned_data.get("generate_activation_key"):
-            self.generated_activation_key = f"OPTIX-ACT-{secrets.token_urlsafe(32)}"
+            self.generated_activation_key = f"DOLLAR-ACT-{secrets.token_urlsafe(32)}"
             activation_key = self.generated_activation_key
         if self.cleaned_data.get("generate_b1_bridge_key"):
-            self.generated_b1_bridge_key = f"OPTIX-B1-{secrets.token_urlsafe(32)}"
+            self.generated_b1_bridge_key = f"DOLLAR-B1-{secrets.token_urlsafe(32)}"
             b1_key = self.generated_b1_bridge_key
         previous = self.initial or {}
         if activation_key:
@@ -1122,7 +1122,7 @@ class DesktopSecurityConfigurationAdmin(admin.ModelAdmin):
         if form.generated_activation_key:
             self.message_user(
                 request,
-                f"Copy now — new OPTIX activation key: {form.generated_activation_key}",
+                f"Copy now — new Dollar activation key: {form.generated_activation_key}",
                 level=messages.WARNING,
             )
         if form.generated_b1_bridge_key:
@@ -1132,11 +1132,11 @@ class DesktopSecurityConfigurationAdmin(admin.ModelAdmin):
                 level=messages.WARNING,
             )
 
-    @admin.action(description="Reveal saved OPTIX activation and B1 keys")
+    @admin.action(description="Reveal saved Dollar activation and B1 keys")
     def reveal_saved_keys(self, request, queryset):
         security = queryset.filter(pk=1).first()
         if security is None:
-            self.message_user(request, "Select the global OPTIX desktop security record.", level=messages.ERROR)
+            self.message_user(request, "Select the global Dollar desktop security record.", level=messages.ERROR)
             return
         try:
             activation_key = security.get_activation_key()

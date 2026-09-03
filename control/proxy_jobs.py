@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import re
+import urllib.parse
 from collections.abc import Iterable
 
 from django.db import IntegrityError, connection, transaction
@@ -19,6 +21,38 @@ from .models import (
 def proxy_fingerprint(value: str) -> str:
     """Stable, secret-free identifier for a proxy line."""
     return hashlib.sha256(value.strip().encode("utf-8")).hexdigest()
+
+
+def _repair_legacy_p3_city_proxy(value: str, city: str) -> str:
+    """Upgrade a pre-fix Massive city username without exposing credentials.
+
+    Older pool rows used hyphens in the ``city`` username segment.  Massive
+    requires the preferred city spelling and percent-encoded spaces instead.
+    Pool values are encrypted, therefore repair an old row only when it is
+    about to be issued rather than performing a risky bulk rewrite.
+    """
+    requested_city = str(city or "").strip()
+    if not requested_city:
+        return value
+    parsed = urllib.parse.urlsplit(value)
+    username = urllib.parse.unquote(parsed.username or "")
+    password = urllib.parse.unquote(parsed.password or "")
+    repaired_username, substitutions = re.subn(
+        r"(?<=-city-).*?(?=-session-)", requested_city, username, count=1
+    )
+    if not substitutions or repaired_username == username:
+        return value
+    host = parsed.hostname or ""
+    if not host:
+        return value
+    port = f":{parsed.port}" if parsed.port else ""
+    auth = (
+        f"{urllib.parse.quote(repaired_username, safe='')}:"
+        f"{urllib.parse.quote(password, safe='')}@"
+    )
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, f"{auth}{host}{port}", parsed.path, parsed.query, parsed.fragment)
+    )
 
 
 def reservation_target(job: ProxyGenerationJob) -> int:
@@ -122,10 +156,24 @@ def reserve_pool_proxies(
     issued: list[ProxyReservation] = []
     for entry in entries:
         value = entry.get_proxy()
+        if provider_code == "P3" and city:
+            repaired_value = _repair_legacy_p3_city_proxy(value, city)
+            if repaired_value != value:
+                entry.set_proxy(repaired_value)
+                entry.proxy_fingerprint = proxy_fingerprint(repaired_value)
+                value = repaired_value
         entry.state = "reserved"
         entry.reserved_client = client
         entry.reserved_at = now
-        entry.save(update_fields=("state", "reserved_client", "reserved_at"))
+        entry.save(
+            update_fields=(
+                "proxy_ciphertext",
+                "proxy_fingerprint",
+                "state",
+                "reserved_client",
+                "reserved_at",
+            )
+        )
         reservation = ProxyReservation(
             client=client,
             job=job,

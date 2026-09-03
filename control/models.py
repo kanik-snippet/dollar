@@ -93,9 +93,9 @@ class ClientAccess(models.Model):
     ACTIVATION_REQUIRE = "require"
     ACTIVATION_BYPASS = "bypass"
     ACTIVATION_MODE_CHOICES = (
-        (ACTIVATION_INHERIT, "Inherit global OPTIX activation setting"),
-        (ACTIVATION_REQUIRE, "Require OPTIX activation for this PC"),
-        (ACTIVATION_BYPASS, "Legacy bypass — do not require OPTIX activation"),
+        (ACTIVATION_INHERIT, "Inherit global Dollar activation setting"),
+        (ACTIVATION_REQUIRE, "Require Dollar activation for this PC"),
+        (ACTIVATION_BYPASS, "Legacy bypass — do not require Dollar activation"),
     )
 
     name = models.CharField(max_length=120)
@@ -130,7 +130,7 @@ class ClientAccess(models.Model):
         max_length=16,
         choices=ACTIVATION_MODE_CHOICES,
         default=ACTIVATION_INHERIT,
-        help_text="Override the global OPTIX activation requirement for this individual PC.",
+        help_text="Override the global Dollar activation requirement for this individual PC.",
     )
     notes = models.TextField(blank=True)
     last_seen_at = models.DateTimeField(blank=True, null=True)
@@ -765,7 +765,7 @@ def cleanup_deleted_draft_artifact(sender, instance, **kwargs) -> None:
 
 
 class DesktopComponentRelease(models.Model):
-    """A signed, independently deployable part of the OPTIX desktop app."""
+    """A signed, independently deployable part of the Dollar desktop app."""
 
     COMPONENT_UI = "ui"
     COMPONENT_ENGINE = "engine"
@@ -788,7 +788,7 @@ class DesktopComponentRelease(models.Model):
     ACTIVATION_CHOICES = (
         (ACTIVATION_HOT, "Apply on Reload"),
         (ACTIVATION_BRIDGE_RESTART, "Apply after safe bridge restart"),
-        (ACTIVATION_APP_RESTART, "Apply after OPTIX restart"),
+        (ACTIVATION_APP_RESTART, "Apply after Dollar restart"),
     )
 
     CHANNEL_CHOICES = DesktopRelease.CHANNEL_CHOICES
@@ -1023,7 +1023,7 @@ class DesktopRuntimeConfiguration(models.Model):
     ui_config = models.JSONField(
         default=dict,
         help_text=(
-            "Non-secret OPTIX UI data such as browsers, devices, labels, feature "
+            "Non-secret Dollar UI data such as browsers, devices, labels, feature "
             "visibility and default selections. Changes apply through Reload."
         ),
     )
@@ -1059,11 +1059,11 @@ class DesktopRuntimeConfiguration(models.Model):
         return super().save(*args, **kwargs)
 
     def __str__(self) -> str:
-        return f"OPTIX {self.channel} runtime config (r{self.revision})"
+        return f"Dollar {self.channel} runtime config (r{self.revision})"
 
 
 class DesktopSecurityConfiguration(models.Model):
-    """Global OPTIX activation and B1 bridge controls.
+    """Global Dollar activation and B1 bridge controls.
 
     Raw activation keys are one-way hashed.  The B1 bridge key has to be
     delivered to an authorized desktop at runtime, so it is encrypted with the
@@ -1072,7 +1072,7 @@ class DesktopSecurityConfiguration(models.Model):
 
     activation_required = models.BooleanField(
         default=False,
-        help_text="When enabled, every OPTIX installation must present the current activation key.",
+        help_text="When enabled, every Dollar installation must present the current activation key.",
     )
     activation_key_hash = models.CharField(max_length=256, blank=True, editable=False)
     activation_key_ciphertext = models.TextField(blank=True, editable=False)
@@ -1080,7 +1080,7 @@ class DesktopSecurityConfiguration(models.Model):
     activation_revision = models.PositiveBigIntegerField(default=1, validators=[MinValueValidator(1)])
     b1_enabled = models.BooleanField(
         default=False,
-        help_text="Allow B1 (the local OPTIX Electron bridge) for activated clients.",
+        help_text="Allow B1 (the local Dollar Electron bridge) for activated clients.",
     )
     b1_key_ciphertext = models.TextField(blank=True, editable=False)
     b1_key_hint = models.CharField(max_length=16, blank=True, editable=False)
@@ -1096,12 +1096,12 @@ class DesktopSecurityConfiguration(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "OPTIX desktop security"
-        verbose_name_plural = "OPTIX desktop security"
+        verbose_name = "Dollar desktop security"
+        verbose_name_plural = "Dollar desktop security"
 
     def save(self, *args, **kwargs):
         if self.pk not in (None, 1):
-            raise ValidationError("Only one global OPTIX desktop security record is allowed.")
+            raise ValidationError("Only one global Dollar desktop security record is allowed.")
         self.pk = 1
         return super().save(*args, **kwargs)
 
@@ -1136,7 +1136,7 @@ class DesktopSecurityConfiguration(models.Model):
         return decrypt_text(self.b1_key_ciphertext) if self.b1_key_ciphertext else ""
 
     def __str__(self) -> str:
-        return "Global OPTIX desktop security"
+        return "Global Dollar desktop security"
 
 
 class ProxyPoolTarget(models.Model):

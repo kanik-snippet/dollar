@@ -153,7 +153,10 @@ def _generate(
             if region:
                 user += f"-subdivision-{region}"
             if city:
-                user += f"-city-{re.sub(r'\s+', '-', city.strip())}"
+                # Massive expects the preferred English city spelling.  The
+                # complete username is URL-encoded by _proxy_url(), so keep
+                # spaces here rather than converting them to hyphens.
+                user += f"-city-{city.strip()}"
             user += f"-session-{_session()}"
             result.append(
                 _proxy_url(protocol, "network.joinmassive.com", 65534, user, password)

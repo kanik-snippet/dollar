@@ -85,11 +85,23 @@ class LegacyP3LocationTests(SimpleTestCase):
             _decode_p3_legacy_location("P3", "UK", "", ""),
             ("GB", "", ""),
         )
+        self.assertEqual(
+            _decode_p3_legacy_location(
+                "P3",
+                _legacy_p3_location_id("city", "BE", "Brussels").upper(),
+                "",
+                "",
+            ),
+            ("BE", "", "Brussels"),
+        )
 
     def test_legacy_flat_catalog_is_limited_to_selected_offices_and_versions(self):
         client = ClientAccess(office_name="Spaze 822")
         self.assertTrue(_legacy_p3_location_catalog(client, "1.7.33.0"))
         self.assertFalse(_legacy_p3_location_catalog(client, "1.7.34"))
+        self.assertFalse(
+            _legacy_p3_location_catalog(client, "1.6.1", update_protocol=2)
+        )
         client.office_name = "Another office"
         self.assertFalse(_legacy_p3_location_catalog(client, "1.7.33"))
 

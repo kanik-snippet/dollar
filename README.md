@@ -1,6 +1,6 @@
-# OPTIX Control Server
+# Dollar Control Server
 
-Dedicated Django control plane for OPTIX. It is intentionally separate from
+Dedicated Django control plane for Dollar. It is intentionally separate from
 the existing automation-control server: its database, encryption keys, release
 storage, admin users and deployment domain must be separate.
 

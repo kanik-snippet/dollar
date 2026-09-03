@@ -72,7 +72,7 @@ def canonical_release_payload(release: Any) -> bytes:
 
 
 def canonical_component_payload(release: Any) -> bytes:
-    """Return the stable payload shared by Django and the OPTIX component loader."""
+    """Return the stable payload shared by Django and the Dollar component loader."""
     payload = {
         "activation": str(release.activation),
         "build_number": int(release.build_number),
