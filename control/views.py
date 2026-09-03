@@ -159,10 +159,20 @@ def _desktop_runtime_values(
     features = dict(values.get("features") or {})
     features["showLogs"] = bool(permissions["show_logs"])
     values["features"] = features
-    values["accessPolicy"] = {
+    access_policy = {
         "source": permissions["source"],
         "officeName": permissions["office_name"],
     }
+    values["accessPolicy"] = access_policy
+    # Older installed shells only expose the generic ``runtime`` object to a
+    # hot UI component. Mirror permission metadata there so Logs visibility
+    # can roll out without requiring a new installer.
+    runtime = dict(values.get("runtime") or {})
+    runtime_features = dict(runtime.get("features") or {})
+    runtime_features["showLogs"] = bool(permissions["show_logs"])
+    runtime["features"] = runtime_features
+    runtime["accessPolicy"] = access_policy
+    values["runtime"] = runtime
     return values
 
 

@@ -86,4 +86,4 @@ class DesktopAccessPolicyTests(TestCase):
         self.assertEqual([row["id"] for row in values["devices"]], ["desktop"])
         self.assertTrue(values["features"]["showLogs"])
         self.assertTrue(values["features"]["anotherFeature"])
-
+        self.assertTrue(values["runtime"]["features"]["showLogs"])
