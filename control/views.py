@@ -364,6 +364,28 @@ def _catalog(*, flatten_p3_locations: bool = False) -> list[dict[str, Any]]:
     return result
 
 
+def _desktop_catalog(
+    client: ClientAccess,
+    *,
+    flatten_p3_locations: bool = False,
+) -> list[dict[str, Any]]:
+    """Use Warrior's signed catalog when this Dollar server delegates proxies."""
+    local_catalog = _catalog(flatten_p3_locations=flatten_p3_locations)
+    if not warrior_proxy_enabled():
+        return local_catalog
+    response = warrior_proxy_relay(client, "catalog")
+    if response.status_code >= 400:
+        logger.warning("Warrior provider catalog relay failed with status %s", response.status_code)
+        return local_catalog
+    try:
+        payload = json.loads(response.content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        logger.warning("Warrior provider catalog relay returned invalid JSON")
+        return local_catalog
+    providers = payload.get("providers") if isinstance(payload, dict) else None
+    return providers if isinstance(providers, list) and providers else local_catalog
+
+
 @require_GET
 def home(request: HttpRequest) -> HttpResponse:
     return render(request, "control/home.html")
@@ -612,7 +634,8 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
             "browser_group_name": group_name,
             "profile_name": profile_name,
         },
-        "catalog": {"providers": _catalog(
+        "catalog": {"providers": _desktop_catalog(
+            client,
             flatten_p3_locations=_legacy_p3_location_catalog(
                 client,
                 app_version,

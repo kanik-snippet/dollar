@@ -18,6 +18,7 @@ from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import close_old_connections
+from django.http import JsonResponse
 from django.test import (
     SimpleTestCase,
     TestCase,
@@ -55,6 +56,7 @@ from .tasks import (
 )
 from .views import (
     _decode_p3_legacy_location,
+    _desktop_catalog,
     _legacy_p3_location_catalog,
     _legacy_p3_location_id,
     _legacy_p3_location_rows,
@@ -62,6 +64,18 @@ from .views import (
 
 
 class LegacyP3LocationTests(SimpleTestCase):
+    @mock.patch("control.views.warrior_proxy_relay")
+    @mock.patch("control.views.warrior_proxy_enabled", return_value=True)
+    @mock.patch("control.views._catalog", return_value=[])
+    def test_dollar_uses_warrior_provider_catalog(self, _local, _enabled, relay):
+        relay.return_value = JsonResponse({
+            "allowed": True,
+            "providers": [{"id": "P3", "name": "P3", "countries": [{"id": "US", "name": "United States"}]}],
+        })
+        providers = _desktop_catalog(ClientAccess(office_name="Personal"))
+        self.assertEqual(providers[0]["countries"][0]["id"], "US")
+        relay.assert_called_once_with(mock.ANY, "catalog")
+
     def test_legacy_aliases_decode_to_existing_prefill_dimensions(self):
         self.assertEqual(
             _decode_p3_legacy_location(
