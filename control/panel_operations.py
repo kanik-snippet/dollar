@@ -399,12 +399,18 @@ def panel_proxy_api(request: HttpRequest) -> JsonResponse:
                     )
                     created += int(was_created)
                     queued += int(queue_refill_proxy_pool(target.pk))
+                existing = max(0, len(bundles) - missing - created)
+                location = " / ".join(
+                    (country, region or "Any state", city or "Any city")
+                )
                 _invalidate_proxy_summary()
                 return panel_json({
                     "ok": True,
                     "message": (
-                        f"{provider} {country} queued for {scope_label}: {queued} refill(s), "
-                        f"{created} new target(s), {missing} bundle(s) missing credentials."
+                        f"{provider} {location} queued for {scope_label}: "
+                        f"{queued} pool refill job(s), {created} new location pool(s), "
+                        f"{existing} existing location pool(s), "
+                        f"{missing} bundle(s) missing credentials."
                     ),
                 })
 
