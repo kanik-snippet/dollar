@@ -27,7 +27,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from .models import (
-    BootstrapAudit, ClientAccess, DesktopComponentRelease, DesktopOfficeAccessPolicy, DesktopRelease, DesktopRuntimeConfiguration, DesktopSecurityConfiguration, ExtensionPackage, ProfileActivity, ProfileDomainActivity, Provider, ProxyCountryFile,
+    BootstrapAudit, ClientAccess, ClientAccessIP, DesktopComponentRelease, DesktopOfficeAccessPolicy, DesktopRelease, DesktopRuntimeConfiguration, DesktopSecurityConfiguration, ExtensionPackage, ProfileActivity, ProfileDomainActivity, Provider, ProxyCountryFile,
     ProfileCreateLease, ProfileCreateQueue, ProxyCityCatalog, ProxyGenerationJob,
     ProxyPoolEntry, ProxyPoolTarget, ProxyReservation, ProxyRegionCatalog,
 )
@@ -430,6 +430,54 @@ def _denied(
     )
 
 
+def _bootstrap_client(device_id: str, access_ip: str) -> ClientAccess | None:
+    """Resolve normal clients by device+IP and trusted bypass clients by device.
+
+    A bypass is an explicit administrator decision for one stable Device ID.
+    Its public IPv4 may change, so requiring every new address to be manually
+    approved would make the bypass ineffective.
+    """
+    rows = ClientAccess.objects.select_related("config_bundle").filter(
+        device_id=device_id
+    )
+    bypass = (
+        rows.filter(
+            active=True,
+            config_bundle__active=True,
+            activation_mode=ClientAccess.ACTIVATION_BYPASS,
+        )
+        .order_by("pk")
+        .first()
+    )
+    if bypass is not None:
+        return bypass
+    exact = (
+        rows.filter(
+            Q(ipv4=access_ip)
+            | Q(allowed_ips__ipv4=access_ip, allowed_ips__active=True)
+        )
+        .distinct()
+        .order_by("pk")
+        .first()
+    )
+    if exact is not None:
+        return exact
+    return None
+
+
+def _remember_bypass_ip(client: ClientAccess, access_ip: str) -> None:
+    if (
+        client.activation_mode != ClientAccess.ACTIVATION_BYPASS
+        or client.ipv4 == access_ip
+    ):
+        return
+    ClientAccessIP.objects.update_or_create(
+        client=client,
+        ipv4=access_ip,
+        defaults={"active": True},
+    )
+
+
 def _catalog(*, flatten_p3_locations: bool = False) -> list[dict[str, Any]]:
     active_files = ProxyCountryFile.objects.filter(active=True).only(
         "provider_id", "country_code", "country_name", "version", "content_sha256"
@@ -630,13 +678,7 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
             .first()
         )
     else:
-        client = (
-            ClientAccess.objects.select_related("config_bundle")
-            .filter(device_id=device_id)
-            .filter(Q(ipv4=access_ip) | Q(allowed_ips__ipv4=access_ip, allowed_ips__active=True))
-            .distinct()
-            .first()
-        )
+        client = _bootstrap_client(device_id, access_ip)
     if client is None:
         return _denied(
             "not-whitelisted",
@@ -654,6 +696,8 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
             device_id=device_id,
             client=client,
         )
+
+    _remember_bypass_ip(client, access_ip)
 
     security = DesktopSecurityConfiguration.objects.filter(pk=1).first()
     activation_is_required = _activation_is_required(client, security)

@@ -243,6 +243,44 @@ class ControlApiTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json(), {"allowed": False, "message": "Access denied."})
 
+    def test_bypass_device_accepts_and_remembers_a_changed_public_ip(self):
+        self.client_access.activation_mode = ClientAccess.ACTIVATION_BYPASS
+        self.client_access.save(update_fields=("activation_mode", "updated_at"))
+        ClientAccess.objects.create(
+            name="Old duplicate record",
+            ipv4="203.0.113.99",
+            device_id="device-one",
+            office_name="old-office",
+            system_number="old-system",
+            profile_name="Old duplicate",
+            config_bundle=self.bundle,
+        )
+
+        response = self.bootstrap(
+            reported="203.0.113.99",
+            remote="203.0.113.99",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["allowed"])
+        self.assertTrue(
+            ClientAccessIP.objects.filter(
+                client=self.client_access,
+                ipv4="203.0.113.99",
+                active=True,
+            ).exists()
+        )
+
+        token = response.json()["access_token"]
+        proxy_response = self.client.get(
+            reverse("control:proxy-file", args=("P1", "US")),
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_X_DEVICE_ID="device-one",
+            HTTP_X_CLIENT_IPV4="203.0.113.99",
+            REMOTE_ADDR="203.0.113.99",
+        )
+        self.assertEqual(proxy_response.status_code, 200)
+
     def test_reported_ip_must_match_observed_ip(self):
         response = self.bootstrap(reported="203.0.113.11")
         self.assertEqual(response.status_code, 403)
