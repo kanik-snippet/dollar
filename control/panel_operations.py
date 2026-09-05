@@ -85,6 +85,21 @@ def _visible_offices() -> list[str]:
     return [name for name in rows if str(name).strip().casefold() not in HIDDEN_OFFICES]
 
 
+def _control_offices() -> list[str]:
+    """Return every office that has a desktop client.
+
+    Personal/test offices stay hidden from the operational Access and Proxy
+    workspaces, but Dollar Control must still show installed Dollar clients so
+    their product, release and permissions can be managed.
+    """
+    return list(
+        ClientAccess.objects.exclude(office_name="")
+        .values_list("office_name", flat=True)
+        .distinct()
+        .order_by("office_name")
+    )
+
+
 def _selected_office(raw: Any, offices: list[str]) -> str:
     requested = str(raw or "").strip()
     for office in offices:
@@ -644,7 +659,7 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
             body = _body(request)
             action = str(body.get("action") or "").strip().lower()
             if action == "save_office":
-                office = _selected_office(body.get("office"), _visible_offices())
+                office = _selected_office(body.get("office"), _control_offices())
                 if not office:
                     raise ValueError("Choose an office.")
                 policy, _ = DesktopOfficeAccessPolicy.objects.get_or_create(office_name=office)
@@ -742,7 +757,7 @@ def panel_optix_api(request: HttpRequest) -> JsonResponse:
         except ValueError as exc:
             return panel_json({"ok": False, "message": str(exc)}, status=400)
 
-    offices = _visible_offices()
+    offices = _control_offices()
     office = _selected_office(request.GET.get("office"), offices)
     client_id = str(request.GET.get("client_id") or "").strip()
     clients = list(

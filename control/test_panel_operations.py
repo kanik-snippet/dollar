@@ -35,7 +35,7 @@ class OperationsPanelTests(TestCase):
             config_bundle=self.bundle,
         )
         personal_bundle = ConfigBundle.objects.create(name="PERSONAL-TEST")
-        ClientAccess.objects.create(
+        self.personal_device = ClientAccess.objects.create(
             name="Personal testing",
             ipv4="198.51.100.20",
             device_id="personal-device",
@@ -138,6 +138,20 @@ class OperationsPanelTests(TestCase):
         self.assertEqual(self.device.desktop_remote_action_requested_by, self.user)
         self.assertIsNone(self.device.desktop_remote_action_acknowledged_at)
 
+    def test_dollar_control_includes_personal_installed_devices(self):
+        self.personal_device.desktop_client_product = ClientAccess.DESKTOP_PRODUCT_DOLLAR
+        self.personal_device.desktop_client_version = "0.2.1"
+        self.personal_device.save(update_fields=("desktop_client_product", "desktop_client_version"))
+
+        response = self.client.get(reverse("control:panel-optix-api"), {"office": "Personal"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("Personal", payload["offices"])
+        self.assertEqual(payload["office"], "Personal")
+        self.assertEqual(len(payload["rows"]), 1)
+        self.assertEqual(payload["rows"][0]["product"]["code"], ClientAccess.DESKTOP_PRODUCT_DOLLAR)
+
     def test_panel_navigation_has_focused_operations_and_releases(self):
         response = self.client.get(reverse("control:panel"))
         self.assertContains(response, 'data-route="access"')
@@ -146,4 +160,3 @@ class OperationsPanelTests(TestCase):
         self.assertContains(response, 'data-route="releases"')
         self.assertNotContains(response, 'data-route="overview"')
         self.assertNotContains(response, "Domain activity")
-
