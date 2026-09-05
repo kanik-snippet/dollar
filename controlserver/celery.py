@@ -9,8 +9,12 @@ app.autodiscover_tasks()
 
 
 @worker_ready.connect
-def prefill_proxy_pools_on_worker_start(**_kwargs):
+def prefill_proxy_pools_on_worker_start(sender=None, **_kwargs):
     """Warm every configured country pool immediately after worker deployment."""
+    # Dedicated metadata workers must not trigger unrelated proxy generation.
+    queues = getattr(getattr(sender, "task_consumer", None), "queues", None)
+    if queues is not None and "proxy-jobs" not in {queue.name for queue in queues}:
+        return
     app.send_task(
         "control.tasks.maintain_proxy_pools",
         kwargs={"force": True},

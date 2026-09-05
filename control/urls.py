@@ -74,6 +74,7 @@ urlpatterns = [
         name="ys-bridge-complete",
     ),
     path("api/v1/bootstrap/", views.bootstrap, name="bootstrap"),
+    path("api/v1/browser-catalog/", views.browser_catalog, name="browser-catalog"),
     path("api/v1/desktop-command/ack/", views.desktop_command_ack, name="desktop-command-ack"),
     path("api/v1/proxy-jobs/", views.create_proxy_job, name="proxy-job-create"),
     path("api/v1/proxy-jobs/<int:job_id>/", views.proxy_job_detail, name="proxy-job-detail"),

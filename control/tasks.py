@@ -36,6 +36,16 @@ SUPPORTED_DYNAMIC_PROVIDERS = frozenset({"P1", "P2", "P3", "P4"})
 logger = logging.getLogger(__name__)
 
 
+@shared_task(soft_time_limit=660, time_limit=700)
+def sync_ys_browser_catalogs():
+    from .browser_catalog import sync_catalogs
+    results = sync_catalogs()
+    # Sanitized status only; upstream response bodies and account keys stay private.
+    for result in results:
+        logger.info("YS catalog sync: %s", result)
+    return results
+
+
 def _value(config: dict, *names: str) -> str:
     for name in names:
         value = str(config.get(name) or os.environ.get(name) or "").strip()

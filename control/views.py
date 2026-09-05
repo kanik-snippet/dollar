@@ -32,6 +32,7 @@ from .models import (
     ProxyPoolEntry, ProxyPoolTarget, ProxyReservation, ProxyRegionCatalog,
 )
 from .p3_geo_catalog import P3_GEO_ACCOUNT_KEY, p3_city_name
+from .browser_catalog import current_catalog
 from .geo_catalog import p2_geo_account_key_from_config
 from .exit_ip_cooldown import (
     check_exit_ip,
@@ -878,6 +879,10 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
         "revision": int(runtime_config.revision) if runtime_config is not None else 0,
         "values": runtime_values,
     }
+    if detected_product == "dollar":
+        catalog = current_catalog(descriptor=True)
+        if catalog is not None:
+            response_payload["browser_catalog_sync"] = catalog
     if update_protocol >= 1:
         # ClientAccess remains authoritative, and a mismatched executable gets
         # no manifest instead of a manifest it would reject for another channel.
@@ -1407,6 +1412,23 @@ def desktop_component_manifest(request: HttpRequest) -> JsonResponse:
             ],
         }
     )
+
+
+@require_GET
+def browser_catalog(request: HttpRequest) -> JsonResponse:
+    try:
+        client = _authenticated_client(request)
+        if client.desktop_client_product != "dollar":
+            raise ValueError("Dollar client required")
+    except (ValueError, signing.BadSignature, signing.SignatureExpired, ClientAccess.DoesNotExist):
+        return _json_response({"allowed": False, "message": "Access denied."}, status=403)
+    payload = current_catalog()
+    if payload is None:
+        return _json_response({"message": "No validated browser catalog is available yet."}, status=503)
+    response = _json_response(payload)
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @require_GET

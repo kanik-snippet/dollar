@@ -24,6 +24,23 @@ from django.utils.html import format_html
 from .models import (BootstrapAudit, ClientAccess, ConfigBundle, DesktopComponentRelease, DesktopOfficeAccessPolicy, DesktopRelease, DesktopRuntimeConfiguration, DesktopSecurityConfiguration, ExtensionPackage, MonitoredDomain, Provider, ProxyCountryFile, ProxyGenerationJob, ProxyInventoryAlert, OfficeAuditRequest, ProxyReservation, ProxyExitIPCooldown, ProfileActivity, OfficeProfileAudit, ProfileDomainActivity, OfficeAuditDomain, BrowserGroupMapping, ProxyPoolTarget, ProxyPoolEntry, ProxyRegionCatalog, ProxyCityCatalog, SubAdminAccount, SubAdminDomainExclusion, SubAdminScopeExclusion, ClientAccessIP, YSBridgeAgent, YSBridgeCommand)
 from .release_updates import canonical_component_payload, canonical_release_payload
 from .tasks import queue_refill_proxy_pool
+from .models import BrowserCatalogSnapshot
+
+
+@admin.register(BrowserCatalogSnapshot)
+class BrowserCatalogSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("name", "last_attempt_at", "last_success_at", "data_updated_at", "last_error")
+    readonly_fields = ("name", "revision", "last_attempt_at", "last_success_at", "data_updated_at", "last_error", "lease_until", "payload")
+    fields = readonly_fields
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 

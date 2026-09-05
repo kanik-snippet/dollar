@@ -36,6 +36,27 @@ component_version_validator = RegexValidator(
 
 logger = logging.getLogger("control")
 
+
+class BrowserCatalogSnapshot(models.Model):
+    """Last-good metadata and bounded sync status. Not an executable release."""
+
+    name = models.CharField(max_length=32, unique=True)
+    payload = models.JSONField(default=dict)
+    revision = models.CharField(max_length=64, blank=True, default="")
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    last_success_at = models.DateTimeField(null=True, blank=True)
+    data_updated_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=300, blank=True, default="")
+    lease_token = models.CharField(max_length=32, blank=True, default="")
+    lease_until = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "YS browser catalog sync"
+        verbose_name_plural = "YS browser catalog sync status"
+
+    def __str__(self):
+        return self.name
+
 DEFAULT_DESKTOP_PROVIDER_CODES = ["P1", "P2", "P3", "P4"]
 DEFAULT_DESKTOP_BROWSER_CODES = ["B1", "B2"]
 DEFAULT_DESKTOP_DEVICE_CODES = ["desktop", "mobile"]

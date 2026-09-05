@@ -260,6 +260,10 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", False)
 CELERY_TASK_IGNORE_RESULT = True
 
+# Server-only, read-only YS metadata import. No profile data is sent upstream.
+YS_CATALOG_SYNC_ENABLED = env_bool("YS_CATALOG_SYNC_ENABLED", False)
+YS_UPSTREAM_API_KEY = os.getenv("YS_UPSTREAM_API_KEY", "").strip()
+
 # Share cache state across Gunicorn workers. REDIS_CACHE_URL may point to a
 # dedicated Redis service/database; otherwise DB 1 is derived from REDIS_URL
 # so Celery queue data and Django cache keys remain isolated.
@@ -296,6 +300,11 @@ else:
         }
     }
 CELERY_BEAT_SCHEDULE = {
+    "ys-browser-catalog-sync-ist": {
+        "task": "control.tasks.sync_ys_browser_catalogs",
+        "schedule": crontab(hour="8,12,16,20", minute=0),
+        "options": {"queue": "catalog-sync", "expires": 3600},
+    },
     "maintain-proxy-pools": {
         "task": "control.tasks.maintain_proxy_pools",
         "schedule": 300.0,
