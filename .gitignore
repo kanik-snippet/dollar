@@ -7,5 +7,7 @@ tmp/ys-catalog-*
 staticfiles/
 media/
 private-desktop-releases/
+/private-catalog-deploy-*/
+/.component-upload-catalog-*/
 .pytest_cache/
 catalog_seed/*/*.txt

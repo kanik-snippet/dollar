@@ -1,8 +1,23 @@
 # Dollar: scheduled YS catalog sync
 
 This repository targets Dollar. Warrior/OPTIX has its own independent catalog
-deployment. Editing either repository alone does not start a production schedule
-or update installed PCs.
+deployment. A server deployment does not itself activate updated code on a PC.
+
+## Deployment status — 2026-09-06
+
+Both Dollar and Warrior/OPTIX server deployments and their independent scheduled
+metadata refreshes are live. Each has imported **19 common catalogs and 6 browser
+version metadata rows**. Testing-channel component release **202609060101** is
+published.
+
+Dollar **0.2.0** supports the component bridge. Existing OPTIX **1.6.1** needs the
+one-time **1.6.2** wrapper update to consume these components; that optional
+installer rollout remains pending. Final PC activation has not been confirmed.
+Server deployment or component publication is not proof of activation on a PC.
+
+Catalog refreshes never automatically download or install browser binaries.
+Private deployment backups and component-upload staging directories are excluded
+from Git; existing private runtime data stays outside version control.
 
 ## What is fetched
 
@@ -29,7 +44,7 @@ The import never downloads or runs a binary and never changes the current curate
 Android/desktop version policy. Browser binaries still require a validated signed
 component release. Private release-signing keys remain outside the Django host.
 
-## Production setup (deployment still required)
+## Production setup reference (already deployed)
 
 In this Dollar server's private `.env`, set:
 
