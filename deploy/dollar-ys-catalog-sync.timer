@@ -1,0 +1,12 @@
+[Unit]
+Description=Dollar YS metadata at 08/12/16/20 Asia/Kolkata
+
+[Timer]
+OnCalendar=*-*-* 08,12,16,20:00:00 Asia/Kolkata
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=false
+Unit=dollar-ys-catalog-sync.service
+
+[Install]
+WantedBy=timers.target

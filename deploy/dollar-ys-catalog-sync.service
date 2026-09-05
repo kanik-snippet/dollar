@@ -1,0 +1,16 @@
+[Unit]
+Description=Dollar isolated read-only YS catalog refresh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=dolla5434
+WorkingDirectory=/home/dollar.alessarsolutions.in/optix-control-server
+ExecStart=/bin/bash /home/dollar.alessarsolutions.in/optix-control-server/deploy/run_ys_catalog_sync.sh
+TimeoutStartSec=750
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal

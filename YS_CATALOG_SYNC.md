@@ -1,7 +1,8 @@
 # Dollar: scheduled YS catalog sync
 
-This feature is source-ready; editing this repository does not itself start a
-production schedule or update installed PCs. OPTIX/Warrior is unchanged.
+This repository targets Dollar. Warrior/OPTIX has its own independent catalog
+deployment. Editing either repository alone does not start a production schedule
+or update installed PCs.
 
 ## What is fetched
 
@@ -40,10 +41,10 @@ YS_UPSTREAM_API_KEY=<original YS account API key, not a Dollar key>
 After deploying this code and before restarting web/worker processes:
 
 ```bash
-./.venv/bin/python manage.py migrate
-./.venv/bin/python manage.py check
-./.venv/bin/python manage.py sync_ys_catalogs
-./.venv/bin/python manage.py sync_ys_catalogs --status
+./.venv-optix/bin/python manage.py migrate
+./.venv-optix/bin/python manage.py check
+./.venv-optix/bin/python manage.py sync_ys_catalogs
+./.venv-optix/bin/python manage.py sync_ys_catalogs --status
 ```
 
 `--status` is read-only and never contacts YS. A manual sync explicitly runs even
@@ -51,18 +52,54 @@ when scheduled sync is disabled, exits nonzero on partial failure, and never pri
 the upstream key or response body. A missing/wrong YS account key can prevent the
 version list while the independently validated common catalogs remain available.
 
-Use the deployment's process manager to run/restart one dedicated worker:
+## Standalone scheduling on the current Dollar deployment
+
+No Redis URL, Celery worker or beat is required. Do not start a full beat merely
+for this feature: it would also schedule unrelated proxy maintenance. The
+standalone unit runs as the existing unprivileged application user **dolla5434**
+with `.venv-optix/bin/python`; root is needed only to install/manage its two units.
+
+Before installation, inspect any existing units of these exact names and
+privately back them up. Do not overwrite another service's configuration.
+Then, as root:
 
 ```bash
-./.venv/bin/celery -A controlserver worker -Q catalog-sync --concurrency=1 --loglevel=INFO --hostname='dollar-catalog@%h'
+cd /home/dollar.alessarsolutions.in/optix-control-server
+systemd-analyze verify deploy/dollar-ys-catalog-sync.service deploy/dollar-ys-catalog-sync.timer
+systemd-analyze calendar '*-*-* 08,12,16,20:00:00 Asia/Kolkata'
+install -o root -g root -m 0644 deploy/dollar-ys-catalog-sync.service /etc/systemd/system/dollar-ys-catalog-sync.service
+install -o root -g root -m 0644 deploy/dollar-ys-catalog-sync.timer /etc/systemd/system/dollar-ys-catalog-sync.timer
+systemctl daemon-reload
+systemctl enable --now dollar-ys-catalog-sync.timer
+systemctl list-timers --all dollar-ys-catalog-sync.timer
 ```
 
-Use **one** Celery beat scheduler for this Django deployment. Restart an existing
-beat after deploying; do not start a second one. If there is no scheduler, configure
-a process-manager service using `./.venv/bin/celery -A controlserver beat --loglevel=INFO`.
-Redis must be configured and the worker must consume `catalog-sync`; starting only
-the web server is not sufficient. The dedicated catalog worker does not enqueue
-the proxy pool warmup on startup.
+The timer explicitly uses **Asia/Kolkata** (08/12/16/20), so the system timezone
+does not affect the four slots. `Persistent=false` deliberately avoids an
+unexpected immediate catch-up run when installing or after downtime. Confirm the
+next trigger time after installation. No web/proxy-worker restart is needed just
+to install these standalone scheduling units.
+
+The explicit IANA timezone syntax follows the upstream
+[systemd calendar documentation](https://www.freedesktop.org/software/systemd/man/systemd.time.html#Calendar%20Events).
+
+The runner uses a per-repo `flock`, a 720-second timeout and
+`sync_ys_catalogs --scheduled`. Scheduled mode respects
+`YS_CATALOG_SYNC_ENABLED=false` without requests or DB writes; normal manual
+mode retains its explicit force behavior. Only a static UTC
+timestamp/result/exit-code line reaches the journal; raw Django stdout/stderr
+is suppressed. Detailed sanitized resource status remains in Django admin or
+`manage.py sync_ys_catalogs --status`. Failures/timeouts produce a failed service
+exit code; a live lock skips safely. Service runtime is capped at 750 seconds.
+
+```bash
+systemctl show dollar-ys-catalog-sync.service -p User -p Result -p ExecMainStatus
+journalctl -u dollar-ys-catalog-sync.service -n 20 --no-pager
+```
+
+Do not enable a second catalog schedule through cron or Celery. These units have
+no Redis, cache, proxy-generation, browser or installer dependency. They never
+start a Celery scheduler or restart any existing worker.
 
 ## Client delivery
 
