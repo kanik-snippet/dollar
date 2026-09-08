@@ -1,4 +1,5 @@
 from django.urls import path
+from . import proxy_cooldown_panel
 
 from . import mobile_ops, panel_operations, panel_reporting, panel_resources, panel_views, subadmin_views, views
 
@@ -33,6 +34,7 @@ urlpatterns = [
     path("panel/api/devices/", panel_views.panel_devices_api, name="panel-devices-api"),
     path("panel/api/access/", panel_operations.panel_access_api, name="panel-access-api"),
     path("panel/api/proxy/", panel_operations.panel_proxy_api, name="panel-proxy-api"),
+    path("panel/api/proxy-cooldown/", proxy_cooldown_panel.panel_proxy_cooldown_api, name="panel-proxy-cooldown-api"),
     path("panel/api/optix/", panel_operations.panel_optix_api, name="panel-optix-api"),
     path("panel/api/releases/", panel_operations.panel_releases_api, name="panel-releases-api"),
     path("panel/api/subadmins/", panel_views.panel_subadmins_api, name="panel-subadmins-api"),

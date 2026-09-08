@@ -27,37 +27,52 @@ def _identity(client) -> dict[str, str]:
     }
 
 
-def relay(client, action: str, **values) -> JsonResponse:
+def _relay_payload(payload: dict) -> JsonResponse:
     if not enabled():
         return JsonResponse({"allowed": False, "message": "OPTIX proxy service is not configured."}, status=503)
-    payload = {"action": action, "client": _identity(client), **values}
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     timestamp = str(int(time.time()))
     secret = str(settings.WARRIOR_PROXY_BRIDGE_SECRET).encode("utf-8")
     signature = hmac.new(secret, timestamp.encode("ascii") + b"\n" + raw, hashlib.sha256).hexdigest()
-    request = Request(
-        str(settings.WARRIOR_PROXY_BRIDGE_URL),
-        data=raw,
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-OPTIX-Timestamp": timestamp,
-            "X-OPTIX-Signature": signature,
-        },
-    )
     try:
+        request = Request(
+            str(settings.WARRIOR_PROXY_BRIDGE_URL),
+            data=raw,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-OPTIX-Timestamp": timestamp,
+                "X-OPTIX-Signature": signature,
+            },
+        )
         with urlopen(request, timeout=max(5, int(settings.WARRIOR_PROXY_BRIDGE_TIMEOUT_SECONDS))) as response:
             body = response.read()
             status = response.status
     except HTTPError as error:
         body = error.read()
         status = error.code
-    except (URLError, TimeoutError, OSError):
+    except (URLError, TimeoutError, OSError, ValueError):
         return JsonResponse({"allowed": False, "message": "OPTIX proxy service is unavailable."}, status=503)
     try:
         data = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        if not isinstance(data, dict):
+            raise ValueError("Expected an object response")
+    except (UnicodeDecodeError, ValueError):
         data = {"allowed": False, "message": "OPTIX proxy service returned an invalid response."}
         status = 502
     return JsonResponse(data, status=status)
+
+
+def relay(client, action: str, **values) -> JsonResponse:
+    if action == "cooldown-policy":
+        return JsonResponse({"allowed": False, "message": "Administrative policy access is not a desktop action."}, status=403)
+    return _relay_payload({"action": action, "client": _identity(client), **values})
+
+
+def cooldown_policy(operation: str, *, enabled=None, expected_revision=None, actor: str = "") -> JsonResponse:
+    """Relay panel policy access without fabricating a desktop ClientAccess."""
+    values = {"operation": operation, "actor": actor}
+    if operation == "set":
+        values.update(enabled=enabled, expected_revision=expected_revision)
+    return _relay_payload({"action": "cooldown-policy", "request": values})

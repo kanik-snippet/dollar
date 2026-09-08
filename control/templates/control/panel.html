@@ -7,6 +7,7 @@
   <meta name="robots" content="noindex,nofollow">
   <title>{{ panel_title }}</title>
   <link rel="stylesheet" href="{% static 'control/panel.css' %}">
+  <link rel="stylesheet" href="{% static 'control/panel-cooldown.css' %}?v=20260908-1">
   <link rel="stylesheet" href="{% static 'control/panel-audit.css' %}?v=20260908">
 </head>
 <body>
@@ -14,6 +15,7 @@
   <div class="app-shell" id="panel-app"
        data-access-url="{% url 'control:panel-access-api' %}"
        data-proxy-url="{% url 'control:panel-proxy-api' %}"
+       data-cooldown-url="{% url 'control:panel-proxy-cooldown-api' %}"
        data-optix-url="{% url 'control:panel-optix-api' %}"
        data-releases-url="{% url 'control:panel-releases-api' %}"
        data-audit-url="{% url 'control:panel-office-reports-api' %}"
@@ -104,6 +106,7 @@
 
   <span id="panel-csrf-token" hidden>{% csrf_token %}</span>
   <script src="{% static 'control/panel-audit.js' %}?v=20260908" defer></script>
-  <script src="{% static 'control/panel.js' %}?v=20260908" defer></script>
+  <script src="{% static 'control/panel-cooldown.js' %}?v=20260908-1" defer></script>
+  <script src="{% static 'control/panel.js' %}?v=20260908-cooldown-1" defer></script>
 </body>
 </html>
