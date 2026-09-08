@@ -11,8 +11,10 @@
   const bell = document.querySelector("#notification-button");
   const bellCount = document.querySelector("#notification-count");
   const endpoints = {access: app.dataset.accessUrl, proxy: app.dataset.proxyUrl, optix: app.dataset.optixUrl, releases:app.dataset.releasesUrl};
+  let routeSequence = 0;
+  let cancelAlerts = () => {};
   const state = {
-    route: ["access", "proxy", "optix", "releases"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "access",
+    route: ["access", "proxy", "optix", "releases", "audit", "domains"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "access",
     office: {access: "", proxy: "", optix: "", releases:""},
     data: {access: null, proxy: null, optix: null, releases:null},
   };
@@ -52,8 +54,9 @@
   };
   const loading = () => { content.innerHTML = '<div class="loading-state"><div class="loading-line loading-line-wide"></div><div class="loading-grid"><div class="loading-card"></div><div class="loading-card"></div><div class="loading-card"></div></div><div class="loading-table"></div></div>'; };
   const errorView = error => { content.innerHTML = `<div class="empty-state"><div class="empty-symbol">!</div><h2>Could not load this workspace</h2><p>${escapeHtml(error.message)}</p><button class="button button-primary" data-retry>Try again</button></div>`; };
-  const closeDrawer = () => { if (drawer.open) drawer.close(); drawer.innerHTML = ""; };
+  const closeDrawer = () => { cancelAlerts(); if (drawer.open) drawer.close(); drawer.innerHTML = ""; };
   const openDrawer = html => {
+    cancelAlerts();
     drawer.innerHTML = html;
     if (!drawer.open) drawer.showModal();
     drawer.querySelector("[data-drawer-close]")?.addEventListener("click", closeDrawer);
@@ -66,10 +69,11 @@
 
   function updateHeader() {
     const labels = {access:"Access", proxy:"Proxy", optix:"Dollar Control", releases:"Dollar Releases"};
+    labels.audit = "Office Audit"; labels.domains = "Domain Activity";
     title.textContent = labels[state.route];
     breadcrumb.textContent = labels[state.route];
     document.querySelectorAll(".nav-item[data-route]").forEach(node => node.classList.toggle("is-active", node.dataset.route === state.route));
-    bell.hidden = state.route !== "access";
+    bell.hidden = false;
   }
 
   function updateBell(data) {
@@ -79,7 +83,9 @@
   }
 
   async function loadAccess() {
+    const ticket = routeSequence;
     const data = await getJson(endpoints.access, {office:state.office.access});
+    if (ticket !== routeSequence || state.route !== "access") return;
     state.data.access = data;
     state.office.access = data.office;
     updateBell(data);
@@ -104,7 +110,7 @@
     openDrawer(`<div class="drawer-head"><div><span class="eyebrow">Office-wide IP</span><h2>Add an allowed IP</h2><p>This adds a new address without replacing existing IPs.</p></div><button class="dialog-close" data-drawer-close>Close</button></div><form class="drawer-body stack" id="office-ip-form"><div class="context-box"><span>Office</span><strong>${escapeHtml(office)}</strong></div><label>New public IPv4<input name="ipv4" required placeholder="203.0.113.10" inputmode="decimal"></label><button class="button button-primary" type="submit">Add to every active PC</button></form>`);
     drawer.querySelector("#office-ip-form").addEventListener("submit", async event => {
       event.preventDefault();
-      try { const result = await postJson(endpoints.access, {action:"add_office_ip", office, ipv4:event.currentTarget.ipv4.value}); toast(result.message); closeDrawer(); await loadAccess(); }
+      try { const result = await postJson(endpoints.access, {action:"add_office_ip", office, ipv4:event.currentTarget.ipv4.value}); toast(result.message); closeDrawer(); await alerts.refresh(); if(state.route === "access") await loadAccess(); }
       catch (error) { toast(error.message, true); }
     });
   }
@@ -115,7 +121,7 @@
     openDrawer(`<div class="drawer-head"><div><span class="eyebrow">${escapeHtml(row.office)} / System ${escapeHtml(row.system_number)}</span><h2>${escapeHtml(row.name)}</h2><p>${escapeHtml(row.bundle)}</p></div><button class="dialog-close" data-drawer-close>Close</button></div><div class="drawer-body stack"><div class="detail-list"><div><span>System number</span><strong>${escapeHtml(row.system_number)}</strong></div><div><span>Device ID</span><strong class="mono wrap">${escapeHtml(row.device_id || "Not reported")}</strong></div><div><span>Bundle</span><strong>${escapeHtml(row.bundle)}</strong></div><div><span>Last seen</span><strong>${formatDate(row.last_seen)}</strong></div></div><div><span class="field-title">Allowed IP addresses</span><div class="ip-chips">${allIps.map((ip,index) => `<span>${escapeHtml(ip)}${index === 0 ? " · primary" : ""}</span>`).join("")}</div></div><form class="inline-form" id="device-ip-form"><input name="ipv4" required placeholder="Add another IPv4"><button class="button button-primary" type="submit">Add IP</button></form><label class="toggle-control"><input id="device-access-toggle" type="checkbox" ${row.active ? "checked" : ""}><span>Allow this PC to access Dollar</span></label></div>`);
     drawer.querySelector("#device-ip-form").addEventListener("submit", async event => {
       event.preventDefault();
-      try { const result = await postJson(endpoints.access, {action:"add_device_ip", client_id:row.id, ipv4:event.currentTarget.ipv4.value}); toast(result.message); closeDrawer(); await loadAccess(); }
+      try { const result = await postJson(endpoints.access, {action:"add_device_ip", client_id:row.id, ipv4:event.currentTarget.ipv4.value}); toast(result.message); closeDrawer(); await alerts.refresh(); if(state.route === "access") await loadAccess(); }
       catch (error) { toast(error.message, true); }
     });
     drawer.querySelector("#device-access-toggle").addEventListener("change", async event => {
@@ -124,28 +130,18 @@
     });
   }
 
-  function openNotifications() {
-    const rows = state.data.access?.notifications || [];
-    openDrawer(`<div class="drawer-head"><div><span class="eyebrow">Access requests</span><h2>Notifications</h2><p>Opened requests are marked read and always stay in history.</p></div><button class="dialog-close" data-drawer-close>Close</button></div><div class="drawer-body notification-list">${rows.length ? rows.map(row => `<button class="notification-row${row.read ? "" : " is-unread"}" data-notification="${row.id}"><span class="notification-dot"></span><span><strong>${escapeHtml(row.office)} · System ${escapeHtml(row.system_number)}</strong><small>${escapeHtml(row.reported_ip || row.observed_ip || "No IP")} · ${formatDate(row.created_at)}</small></span><em>${escapeHtml(row.review_status)}</em></button>`).join("") : '<div class="table-empty">No denied access requests.</div>'}</div>`);
-    drawer.querySelectorAll("[data-notification]").forEach(button => button.addEventListener("click", async () => {
-      const row = rows.find(item => String(item.id) === button.dataset.notification);
-      if (!row) return;
-      try { if (!row.read) await postJson(endpoints.access, {action:"mark_read", audit_id:row.id}); } catch {}
-      openAccessRequest(row);
-      loadAccess().catch(() => {});
-    }));
-  }
+  function openNotifications() { return alerts.show(); }
 
   function openAccessRequest(row) {
     const evidence = [...new Set([row.reported_ip, row.observed_ip].filter(Boolean))];
-    openDrawer(`<div class="drawer-head"><div><span class="eyebrow">Denied access request</span><h2>${escapeHtml(row.office)} · System ${escapeHtml(row.system_number)}</h2><p>${formatDate(row.created_at)}</p></div><button class="dialog-close" data-drawer-close>Close</button></div><div class="drawer-body stack"><div class="detail-list"><div><span>Device ID</span><strong class="mono wrap">${escapeHtml(row.device_id)}</strong></div><div><span>Request IP</span><strong>${escapeHtml(evidence.join(" / ") || "Unavailable")}</strong></div><div><span>Reason</span><strong>${escapeHtml(row.reason)}</strong></div><div><span>Review</span><strong>${escapeHtml(row.review_status)}</strong></div></div>${row.review_status === "pending" ? `<form class="stack" id="request-review-form"><label>IP to approve<select name="ipv4">${evidence.map(ip => `<option>${escapeHtml(ip)}</option>`).join("")}</select></label><div class="scope-cards"><label><input type="radio" name="scope" value="device" checked><span><strong>Only this PC</strong><small>Add IP to the existing Device ID record.</small></span></label><label><input type="radio" name="scope" value="office"><span><strong>Every PC in this office</strong><small>Add IP as an additional address office-wide.</small></span></label></div><div class="drawer-actions"><button class="button button-danger" type="button" id="reject-request">Reject</button><button class="button button-primary" type="submit" ${row.can_approve ? "" : "disabled"}>Approve access</button></div>${row.can_approve ? "" : '<p class="form-note is-danger">No existing PC matches this Device ID. This quick action will not create a duplicate record.</p>'}</form>` : '<div class="context-box"><span>Completed</span><strong>This request remains in history.</strong></div>'}</div>`);
+    openDrawer(`<div class="drawer-head"><div><span class="eyebrow">Denied access request</span><h2>${escapeHtml(row.office)} · System ${escapeHtml(row.system_number)}</h2><p>${formatDate(row.created_at)}</p></div><button class="dialog-close" data-drawer-close>Close</button></div><div class="drawer-body stack"><div class="detail-list"><div><span>Device ID</span><strong class="mono wrap">${escapeHtml(row.device_id)}</strong></div><div><span>Request IP</span><strong>${escapeHtml(evidence.join(" / ") || "Unavailable")}</strong></div><div><span>Reason</span><strong>${escapeHtml(row.reason)}</strong></div><div><span>Review</span><strong>${escapeHtml(row.review_status)}</strong></div></div>${row.review_status === "pending" ? `<form class="stack" id="request-review-form"><label>IP to approve<select name="ipv4">${evidence.map(ip => `<option>${escapeHtml(ip)}</option>`).join("")}</select></label><div class="scope-cards"><label><input type="radio" name="scope" value="device" checked><span><strong>Only this PC</strong><small>Add IP to the existing Device ID record.</small></span></label><label><input type="radio" name="scope" value="office"><span><strong>Every PC in this office</strong><small>Add IP as an additional address office-wide.</small></span></label></div><div class="drawer-actions"><button class="button button-danger" type="button" id="reject-request">Reject</button><button class="button button-primary" type="submit" ${row.can_approve ? "" : "disabled"}>Approve access</button></div>${row.can_approve ? "" : '<p class="form-note is-danger">This request cannot be approved by adding an IP. Check the existing device assignment, activation or service settings; no new device record will be created.</p>'}</form>` : '<div class="context-box"><span>Completed</span><strong>This request remains in history.</strong></div>'}</div>`);
     drawer.querySelector("#request-review-form")?.addEventListener("submit", async event => {
       event.preventDefault();
-      try { const form = event.currentTarget; const result = await postJson(endpoints.access, {action:"approve_request", audit_id:row.id, ipv4:form.ipv4.value, scope:form.scope.value}); toast(result.message); closeDrawer(); await loadAccess(); }
+      try { const form = event.currentTarget; const result = await postJson(endpoints.access, {action:"approve_request", audit_id:row.id, ipv4:form.ipv4.value, scope:form.scope.value}); toast(result.message); closeDrawer(); await alerts.refresh(); if(state.route === "access") await loadAccess(); }
       catch (error) { toast(error.message, true); }
     });
     drawer.querySelector("#reject-request")?.addEventListener("click", async () => {
-      try { const result = await postJson(endpoints.access, {action:"reject_request", audit_id:row.id}); toast(result.message); closeDrawer(); await loadAccess(); }
+      try { const result = await postJson(endpoints.access, {action:"reject_request", audit_id:row.id}); toast(result.message); closeDrawer(); await alerts.refresh(); if(state.route === "access") await loadAccess(); }
       catch (error) { toast(error.message, true); }
     });
   }
@@ -156,7 +152,9 @@
   };
 
   async function loadProxy() {
+    const ticket = routeSequence;
     const data = await getJson(endpoints.proxy, {office:state.office.proxy});
+    if (ticket !== routeSequence || state.route !== "proxy") return;
     state.data.proxy = data;
     state.office.proxy = data.office;
     content.innerHTML = `<section class="workspace-head"><div><span class="eyebrow">Bundle inventory</span><h2>Proxy control</h2><p>Fast pool overview; exact available counts load only when you open one PC.</p></div><div class="head-actions"><button class="button button-secondary" id="proxy-resize-office">Adjust stock target</button><button class="button button-secondary" id="proxy-remove-office">Remove office stock</button><button class="button button-primary" id="proxy-operation">Add proxy stock</button></div></section>${officeTabs(data.offices, data.office, "proxy")}<article class="card data-card"><div class="table-toolbar"><div><strong>${escapeHtml(data.office || "No office")}</strong><span>Summary counts pool locations without scanning every proxy row.</span></div></div><div class="table-scroll"><table><thead><tr><th>System</th><th>Bundle</th><th>Active provider pools</th><th>Status</th><th></th></tr></thead><tbody>${data.rows.length ? data.rows.map(row => `<tr><td><strong>${escapeHtml(row.system_number)}</strong><small>${escapeHtml(row.name)}</small></td><td>${escapeHtml(row.bundle)}</td><td>${providerPills(row.providers)}</td><td>${statusPill(row.active)}</td><td class="align-right"><button class="link-button" data-proxy-view="${row.id}">View</button></td></tr>`).join("") : emptyRows("No systems in this office.")}</tbody></table></div></article>`;
@@ -221,7 +219,9 @@
   }
 
   async function loadOptix() {
+    const ticket = routeSequence;
     const data = await getJson(endpoints.optix, {office:state.office.optix});
+    if (ticket !== routeSequence || state.route !== "optix") return;
     state.data.optix = data;
     state.office.optix = data.office;
     const dollarCount=data.rows.filter(row=>row.product.code==="dollar").length,legacyCount=data.rows.filter(row=>row.product.code==="legacy").length,publicCount=data.rows.filter(row=>row.release_channel==="public").length;
@@ -263,14 +263,21 @@
   }
 
   const fileSize=value=>{const bytes=Number(value||0);return bytes<1024?`${bytes} B`:bytes<1048576?`${(bytes/1024).toFixed(1)} KB`:`${(bytes/1048576).toFixed(1)} MB`;};
-  async function loadReleases(){const data=await getJson(endpoints.releases,{office:state.office.releases});state.data.releases=data;state.office.releases=data.office;const latest=data.rows.find(row=>row.status==="draft");content.innerHTML=`<section class="workspace-head control-hero"><div><span class="eyebrow">Signed desktop delivery</span><h2>Dollar Releases</h2><p>Uploaded packages stay visible as waiting until you choose the channel and exact rollout scope.</p></div><div class="head-actions"><a class="button button-secondary" href="/admin/control/desktoprelease/add/">Upload installer</a><a class="button button-primary" href="/admin/control/desktopcomponentrelease/add/">Upload component</a></div></section>${officeTabs(data.offices,data.office,"releases")}<div class="release-overview"><div><span>Waiting for rollout</span><strong>${data.waiting_count}</strong><small>${latest?`${escapeHtml(latest.component)} ${escapeHtml(latest.version)} is latest`:"No uploaded drafts"}</small></div><div><span>Live rollouts</span><strong>${data.live_count}</strong><small>Published release records</small></div><div><span>Selected office</span><strong>${escapeHtml(data.office||"None")}</strong><small>${data.clients.length} targetable PC(s)</small></div></div><article class="card data-card release-table"><div class="table-toolbar"><div><strong>Release timeline</strong><span>Draft means uploaded to the VPS but not delivered.</span></div></div><div class="table-scroll"><table><thead><tr><th>Package</th><th>Version</th><th>Channel</th><th>Scope</th><th>Uploaded</th><th>Status</th><th></th></tr></thead><tbody>${data.rows.length?data.rows.map(row=>{const scope=row.target_device_ids.length?`${row.target_device_ids.length} PC`:row.target_offices.length?row.target_offices.join(", "):"All assigned PCs";return `<tr><td><strong>${escapeHtml(row.component)}</strong><small>${escapeHtml(row.kind)} · ${escapeHtml(row.filename)} · ${fileSize(row.size)}</small></td><td><strong>${escapeHtml(row.version)}</strong><small>Build ${row.build_number} · ${escapeHtml(row.activation)}</small></td><td><span class="release-badge is-${escapeHtml(row.channel)}">${escapeHtml(row.channel)}</span></td><td>${escapeHtml(scope)}</td><td>${formatDate(row.created_at)}</td><td><span class="release-status is-${escapeHtml(row.status)}">${row.status==="draft"?"Waiting":escapeHtml(row.status)}</span></td><td class="align-right">${row.status==="draft"?`<button class="link-button" data-rollout="${row.kind}:${row.id}">Roll out</button>`:row.status==="published"?`<button class="link-button danger-text" data-revoke="${row.kind}:${row.id}">Revoke</button>`:""}</td></tr>`}).join(""):emptyRows("No release packages uploaded yet.")}</tbody></table></div></article>`;content.querySelectorAll("[data-rollout]").forEach(button=>button.onclick=()=>{const[kind,id]=button.dataset.rollout.split(":");openRollout(data.rows.find(row=>row.kind===kind&&String(row.id)===id));});content.querySelectorAll("[data-revoke]").forEach(button=>button.onclick=async()=>{const[kind,id]=button.dataset.revoke.split(":");if(!confirm("Revoke this live rollout?"))return;try{const result=await postJson(endpoints.releases,{action:"revoke",kind,release_id:id});toast(result.message);await loadReleases();}catch(error){toast(error.message,true);}});}
+  async function loadReleases(){const ticket=routeSequence;const data=await getJson(endpoints.releases,{office:state.office.releases});if(ticket!==routeSequence || state.route!=="releases")return;state.data.releases=data;state.office.releases=data.office;const latest=data.rows.find(row=>row.status==="draft");content.innerHTML=`<section class="workspace-head control-hero"><div><span class="eyebrow">Signed desktop delivery</span><h2>Dollar Releases</h2><p>Uploaded packages stay visible as waiting until you choose the channel and exact rollout scope.</p></div><div class="head-actions"><a class="button button-secondary" href="/admin/control/desktoprelease/add/">Upload installer</a><a class="button button-primary" href="/admin/control/desktopcomponentrelease/add/">Upload component</a></div></section>${officeTabs(data.offices,data.office,"releases")}<div class="release-overview"><div><span>Waiting for rollout</span><strong>${data.waiting_count}</strong><small>${latest?`${escapeHtml(latest.component)} ${escapeHtml(latest.version)} is latest`:"No uploaded drafts"}</small></div><div><span>Live rollouts</span><strong>${data.live_count}</strong><small>Published release records</small></div><div><span>Selected office</span><strong>${escapeHtml(data.office||"None")}</strong><small>${data.clients.length} targetable PC(s)</small></div></div><article class="card data-card release-table"><div class="table-toolbar"><div><strong>Release timeline</strong><span>Draft means uploaded to the VPS but not delivered.</span></div></div><div class="table-scroll"><table><thead><tr><th>Package</th><th>Version</th><th>Channel</th><th>Scope</th><th>Uploaded</th><th>Status</th><th></th></tr></thead><tbody>${data.rows.length?data.rows.map(row=>{const scope=row.target_device_ids.length?`${row.target_device_ids.length} PC`:row.target_offices.length?row.target_offices.join(", "):"All assigned PCs";return `<tr><td><strong>${escapeHtml(row.component)}</strong><small>${escapeHtml(row.kind)} · ${escapeHtml(row.filename)} · ${fileSize(row.size)}</small></td><td><strong>${escapeHtml(row.version)}</strong><small>Build ${row.build_number} · ${escapeHtml(row.activation)}</small></td><td><span class="release-badge is-${escapeHtml(row.channel)}">${escapeHtml(row.channel)}</span></td><td>${escapeHtml(scope)}</td><td>${formatDate(row.created_at)}</td><td><span class="release-status is-${escapeHtml(row.status)}">${row.status==="draft"?"Waiting":escapeHtml(row.status)}</span></td><td class="align-right">${row.status==="draft"?`<button class="link-button" data-rollout="${row.kind}:${row.id}">Roll out</button>`:row.status==="published"?`<button class="link-button danger-text" data-revoke="${row.kind}:${row.id}">Revoke</button>`:""}</td></tr>`}).join(""):emptyRows("No release packages uploaded yet.")}</tbody></table></div></article>`;content.querySelectorAll("[data-rollout]").forEach(button=>button.onclick=()=>{const[kind,id]=button.dataset.rollout.split(":");openRollout(data.rows.find(row=>row.kind===kind&&String(row.id)===id));});content.querySelectorAll("[data-revoke]").forEach(button=>button.onclick=async()=>{const[kind,id]=button.dataset.revoke.split(":");if(!confirm("Revoke this live rollout?"))return;try{const result=await postJson(endpoints.releases,{action:"revoke",kind,release_id:id});toast(result.message);await loadReleases();}catch(error){toast(error.message,true);}});}
   function openRollout(row){const data=state.data.releases;openDrawer(`<div class="drawer-head"><div><span class="eyebrow">Release rollout</span><h2>${escapeHtml(row.component)} ${escapeHtml(row.version)}</h2><p>Build ${row.build_number} · ${escapeHtml(row.filename)}</p></div><button class="dialog-close" data-drawer-close>Close</button></div><form class="drawer-body stack" id="rollout-form"><div class="release-package"><span class="metric-icon is-release">R</span><div><strong>Uploaded and signed</strong><small>${fileSize(row.size)} · waiting for rollout</small></div></div><label>Channel<select name="channel"><option value="testing" ${row.channel==="testing"?"selected":""}>Testing</option><option value="public" ${row.channel==="public"?"selected":""}>Public</option></select></label><div><span class="field-title">Rollout scope</span><div class="scope-cards"><label><input type="radio" name="scope" value="all"><span><strong>All assigned PCs</strong></span></label><label><input type="radio" name="scope" value="office" checked><span><strong>${escapeHtml(data.office)}</strong><small>Only this office</small></span></label><label><input type="radio" name="scope" value="device"><span><strong>One PC</strong></span></label></div></div><label>Individual PC<select name="client_id"><option value="">Choose a PC</option>${data.clients.map(client=>`<option value="${client.id}">System ${escapeHtml(client.system_number)} · ${escapeHtml(client.name)}</option>`).join("")}</select></label><button class="button button-primary" type="submit">Publish rollout</button></form>`);const form=drawer.querySelector("#rollout-form");form.onsubmit=async event=>{event.preventDefault();const scope=form.scope.value;if(scope==="device"&&!form.client_id.value){toast("Choose an individual PC.",true);return;}try{const result=await postJson(endpoints.releases,{action:"publish",kind:row.kind,release_id:row.id,channel:form.channel.value,scope,office:data.office,client_id:form.client_id.value});toast(result.message);closeDrawer();await loadReleases();}catch(error){toast(error.message,true);}};}
 
+  const reports = window.createPanelReports({app, content, escapeHtml, formatDate, getJson, openDrawer, busy, errorView});
+  const alerts = window.createPanelNotifications({app, getJson, postJson, openDrawer, openRequest:openAccessRequest, updateBell, escapeHtml, formatDate, toast});
+
+  cancelAlerts = alerts.cancel;
+
   async function loadRoute() {
+    const ticket = ++routeSequence;
+    reports.cancel();
     updateHeader(); loading(); busy(true);
-    try { await ({access:loadAccess,proxy:loadProxy,optix:loadOptix,releases:loadReleases}[state.route])(); }
-    catch (error) { errorView(error); }
-    finally { busy(false); }
+    try { await ({access:loadAccess,proxy:loadProxy,optix:loadOptix,releases:loadReleases,audit:()=>reports.load("audit"),domains:()=>reports.load("domains")}[state.route])(); }
+    catch (error) { if(ticket === routeSequence) errorView(error); }
+    finally { if(ticket === routeSequence) busy(false); }
   }
 
   document.querySelectorAll(".nav-item[data-route]").forEach(button => button.addEventListener("click", () => {
@@ -281,12 +288,13 @@
     if(officeButton){state.office[officeButton.dataset.officeRoute]=officeButton.dataset.office;loadRoute();}
     if(event.target.closest("[data-retry]"))loadRoute();
   });
-  refresh.addEventListener("click",loadRoute);
-  bell.addEventListener("click",()=>{if(state.data.access)openNotifications();else{state.route="access";location.hash="access";loadRoute().then(openNotifications);}});
+  refresh.addEventListener("click",()=>{loadRoute(); alerts.refresh().catch(()=>{});});
+  bell.addEventListener("click",openNotifications);
   drawer.addEventListener("cancel",event=>{event.preventDefault();closeDrawer();});
   drawer.addEventListener("click",event=>{if(event.target===drawer)closeDrawer();});
   document.querySelector("[data-sidebar-open]")?.addEventListener("click",()=>document.body.classList.add("sidebar-open"));
   document.querySelector("[data-sidebar-close]")?.addEventListener("click",()=>document.body.classList.remove("sidebar-open"));
   updateHeader();
-  getJson(endpoints.access).then(data=>{state.data.access=data;state.office.access=data.office;updateBell(data);}).catch(()=>{}).finally(loadRoute);
+  alerts.refresh().catch(()=>{});
+  loadRoute();
 })();

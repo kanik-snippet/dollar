@@ -186,7 +186,7 @@ def _audit_row(
         "created_at": iso(audit.created_at),
         "read": audit.read_at is not None,
         "review_status": audit.review_status,
-        "can_approve": client is not None,
+        "can_approve": client is not None and audit.reason in ACCESS_NOTIFICATION_REASONS,
     }
 
 
@@ -212,6 +212,8 @@ def panel_access_api(request: HttpRequest) -> JsonResponse:
                 )
                 client = _client_for_audit(audit)
                 if action == "approve_request":
+                    if audit.reason not in ACCESS_NOTIFICATION_REASONS:
+                        raise ValueError("This is not an IP approval request. Review the activation or service configuration instead.")
                     if client is None:
                         raise ValueError(
                             "No existing device matches this Device ID. Create its access record first."
@@ -303,34 +305,15 @@ def panel_access_api(request: HttpRequest) -> JsonResponse:
         clients = clients.filter(office_name__iexact=office)
     clients = clients.order_by("system_number", "name", "pk")
 
-    audit_rows = list(BootstrapAudit.objects.select_related("client").filter(
-        allowed=False,
-        reason__in=ACCESS_NOTIFICATION_REASONS,
-    ).order_by("-id")[:200])
-    unresolved_ids = {row.device_id for row in audit_rows if not row.client_id and row.device_id}
-    clients_by_device: dict[str, ClientAccess] = {}
-    for client in (
-        ClientAccess.objects.select_related("config_bundle")
-        .filter(device_id__in=unresolved_ids)
-        .order_by("-active", "pk")
-    ):
-        clients_by_device.setdefault(client.device_id, client)
-    notifications = []
-    for audit in audit_rows:
-        matched_client = audit.client or clients_by_device.get(audit.device_id)
-        row = _audit_row(audit, client_override=matched_client, identity_resolved=True)
-        if row["office"].casefold() in HIDDEN_OFFICES:
-            continue
-        notifications.append(row)
-        if len(notifications) >= 80:
-            break
+    from .panel_reporting import notifications_data
+    alerts = notifications_data(request)
     return panel_json({
         "ok": True,
         "offices": offices,
         "office": office,
         "rows": [_client_row(row) for row in clients],
-        "notifications": notifications,
-        "unread_count": sum(1 for row in notifications if not row["read"]),
+        "notifications": alerts["notifications"],
+        "unread_count": alerts["unread_count"],
     })
 
 

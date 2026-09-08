@@ -1,12 +1,15 @@
 from django.urls import path
 
-from . import mobile_ops, panel_operations, panel_resources, panel_views, subadmin_views, views
+from . import mobile_ops, panel_operations, panel_reporting, panel_resources, panel_views, subadmin_views, views
 
 
 app_name = "control"
 urlpatterns = [
     path("", views.home, name="home"),
     path("panel/", panel_views.panel, name="panel"),
+    path("panel/api/office-reports/", panel_reporting.office_audit_api, name="panel-office-reports-api"),
+    path("panel/api/domain-reports/", panel_reporting.domain_activity_api, name="panel-domain-reports-api"),
+    path("panel/api/notifications/", panel_reporting.notifications_api, name="panel-notifications-api"),
     path("panel/mobile-ops/", mobile_ops.mobile_ops_page, name="mobile-ops"),
     path("panel/api/mobile-ops/", mobile_ops.mobile_ops_api, name="mobile-ops-api"),
     path(

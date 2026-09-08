@@ -1997,8 +1997,7 @@ def profile_activity(request: HttpRequest) -> JsonResponse:
         status = str(body.get("status") or "").strip()[:32]
         if not status:
             raise ValueError("Missing status")
-        job = ProxyGenerationJob.objects.get(pk=job_id, client=client) if job_id else None
-        reservation = ProxyReservation.objects.get(pk=reservation_id, client=client) if reservation_id else None
+        job, reservation = _activity_proxy_references(client, job_id, reservation_id)
         urls = body.get("start_urls", [])
         if not isinstance(urls, list):
             raise ValueError("Invalid URLs")
@@ -2014,6 +2013,26 @@ def profile_activity(request: HttpRequest) -> JsonResponse:
             ProxyGenerationJob.DoesNotExist, ProxyReservation.DoesNotExist):
         return _json_response({"allowed": False, "message": "Access denied."}, status=403)
     return _json_response({"allowed": True}, status=201)
+
+
+def _activity_proxy_references(client, job_id, reservation_id):
+    """Remote proxy IDs must never resolve to unrelated Dollar database rows.
+
+    The client is authenticated before this helper. Lifecycle/domain reports are
+    client-reported telemetry, not permission to read or mutate proxy jobs.
+    In relay mode remote IDs are validated but local FK links remain empty.
+    """
+    for value in (job_id, reservation_id):
+        if value is not None and (isinstance(value, bool) or not str(value).isascii()
+                                  or not str(value).isdigit() or not 0 < int(value) < 2**63):
+            raise ValueError("Invalid activity proxy reference")
+    if warrior_proxy_enabled():
+        return None, None
+    job = ProxyGenerationJob.objects.get(pk=job_id, client=client) if job_id else None
+    reservation = ProxyReservation.objects.get(pk=reservation_id, client=client) if reservation_id else None
+    if job and reservation and reservation.job_id != job.pk:
+        raise ValueError("Activity proxy references do not match")
+    return job, reservation
 
 
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -2073,14 +2092,7 @@ def profile_domains(request: HttpRequest) -> JsonResponse:
             raise ValueError("Invalid domain batch")
         job_id = body.get("job_id")
         reservation_id = body.get("reservation_id")
-        job = (
-            ProxyGenerationJob.objects.get(pk=job_id, client=client)
-            if job_id else None
-        )
-        reservation = (
-            ProxyReservation.objects.get(pk=reservation_id, client=client)
-            if reservation_id else None
-        )
+        job, reservation = _activity_proxy_references(client, job_id, reservation_id)
         normalized: dict[str, dict[str, Any]] = {}
         for item in raw_domains:
             if not isinstance(item, dict):
