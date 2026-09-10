@@ -41,7 +41,7 @@ class CooldownPolicyRelayTests(SimpleTestCase):
         response = bridge.relay(client, "claim", request={"exit_ip": "198.51.100.4"})
         self.assertEqual(response.status_code, 200)
         payload = json.loads(urlopen.call_args.args[0].data)
-        self.assertEqual(payload["client"], {"office_name": "Office", "system_number": "01", "device_id": "device"})
+        self.assertEqual(payload["client"], {"office_name": "Office", "system_number": "01", "device_id": ""})
         self.assertEqual(payload["action"], "claim")
 
     @patch("control.warrior_proxy_bridge.urlopen")

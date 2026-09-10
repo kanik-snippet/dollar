@@ -20,10 +20,15 @@ def enabled() -> bool:
 
 
 def _identity(client) -> dict[str, str]:
+    # Dollar owns and authenticates its device IDs.  Warrior owns the proxy
+    # inventory and maps that independently-managed client to the existing
+    # office/system bundle.  Forwarding Dollar's device ID made every freshly
+    # installed PC require a duplicate Warrior ClientAccess row with the exact
+    # same ID, even when the office and system assignment was already valid.
     return {
         "office_name": str(client.office_name),
         "system_number": str(client.system_number),
-        "device_id": str(client.device_id or ""),
+        "device_id": "",
     }
 
 

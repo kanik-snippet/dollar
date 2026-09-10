@@ -29,12 +29,14 @@ WARRIOR_PROXY_BRIDGE_TIMEOUT_SECONDS=30
 
 ## Identity mapping
 
-For OPTIX-backed offices that use Warrior as the proxy supplier, Warrior must
-already have one active Client Access row with the same Office Name, System
-Number and, when present, Device ID. This maps the OPTIX request to the
-correct existing Warrior bundle without copying provider credentials into
-OPTIX. Office-to-backend selection belongs to the OPTIX desktop router, not
-to this proxy bridge.
+For Dollar-backed offices that use Warrior as the proxy supplier, Warrior must
+already have one active Client Access row with the same Office Name and System
+Number. Dollar authenticates its own Device ID before relaying the request;
+that independently-managed ID is deliberately not required to exist in
+Warrior. This maps newly installed Dollar PCs to the correct existing Warrior
+bundle without copying provider credentials or duplicating device records.
+Office-to-backend selection belongs to the Dollar desktop router, not to this
+proxy bridge.
 
 ## What is relayed
 
